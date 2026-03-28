@@ -19,7 +19,7 @@ from tqdm import tqdm
 DATASET_PATH = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset"  # Chemin Google Colab
 
 TRAIN_DIR = os.path.join(DATASET_PATH, "train")
-VALID_DIR = os.path.join(DATASET_PATH, "valid")
+VALID_DIR = os.path.join(DATASET_PATH, "test")
 TEST_DIR  = os.path.join(DATASET_PATH, "test")
 
 # Hyperparamètres
