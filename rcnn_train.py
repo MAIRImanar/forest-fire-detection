@@ -16,7 +16,7 @@ import time
 from tqdm import tqdm
 
 #  MODIFIEZ CE CHEMIN selon votre Google Drive
-DATASET_PATH = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset"  # Chemin Google Colab
+DATASET_PATH = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset"  # Chemin Google Colab
 
 TRAIN_DIR = os.path.join(DATASET_PATH, "train")
 VALID_DIR = os.path.join(DATASET_PATH, "valid")
