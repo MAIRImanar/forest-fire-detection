@@ -65,7 +65,7 @@ valid_loader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, n
 test_loader  = DataLoader(test_dataset,  batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
 
 CLASS_NAMES = train_dataset.classes  # ['fire', 'nofire']
-print(f"✅ Classes détectées : {CLASS_NAMES}")
+print(f" Classes détectées : {CLASS_NAMES}")
 print(f"   Train  : {len(train_dataset)} images")
 print(f"   Valid  : {len(valid_dataset)} images")
 print(f"   Test   : {len(test_dataset)}  images")
@@ -73,7 +73,7 @@ print(f"   Test   : {len(test_dataset)}  images")
 
 # 4. MODÈLE R-CNN (ResNet50 + Transfer Learning)
 
-print("\n🧠 Création du modèle R-CNN (ResNet50)...")
+print("\n Création du modèle R-CNN (ResNet50)...")
 
 model = models.resnet50(pretrained=True)
 
@@ -106,7 +106,7 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, schedul
     history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
     best_val_acc = 0.0
 
-    print("\n🚀 Début de l'entraînement R-CNN...")
+    print("\n Début de l'entraînement R-CNN...")
     print("=" * 60)
 
     for epoch in range(num_epochs):
