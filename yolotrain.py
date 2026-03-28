@@ -8,9 +8,9 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import json
 
-# ─────────────────────────────────────────
+
 # 1. CONFIGURATION
-# ─────────────────────────────────────────
+
 #  MODIFIEZ CE CHEMIN selon votre Google Drive
 DATASET_YAML = "/content/drive/MyDrive/ForestFireDataset_Detection/data.yaml"
 
@@ -36,7 +36,7 @@ model = YOLO(MODEL_SIZE)
 print(" Modèle YOLOv11 chargé !")
 
 # 3. ENTRAÎNEMENT
-# ─────────────────────────────────────────
+
 print("\n Début de l'entraînement YOLOv11...")
 print("=" * 60)
 
@@ -82,9 +82,9 @@ print(f"   mAP@0.5:0.95: {metrics.box.map:.4f}  ({metrics.box.map*100:.2f}%)")
 print(f"   Precision   : {metrics.box.mp:.4f}  ({metrics.box.mp*100:.2f}%)")
 print(f"   Recall      : {metrics.box.mr:.4f}  ({metrics.box.mr*100:.2f}%)")
 
-# ─────────────────────────────────────────
+
 # 6. VISUALISATION DES COURBES YOLO
-# ─────────────────────────────────────────
+
 results_dir = f"{PROJECT_DIR}/{RUN_NAME}"
 curves_to_show = ["results.png", "confusion_matrix.png", "PR_curve.png", "F1_curve.png"]
 
