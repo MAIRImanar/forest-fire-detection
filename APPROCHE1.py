@@ -200,7 +200,7 @@ yolo.train(
 
 # YOLO Evaluation
 print("\n Évaluation YOLOv11...")
-yolo_best = YOLO("/content/forest-fire-detection/runs/detect/yolo_results/approche1/weights/best.pt")
+yolo_best = YOLO("/content/forest-fire-detection/runs/detect/yolo_results/approche12/weights/best.pt")
 metrics   = yolo_best.val(data=DETECT_YAML, split="test")
 print(f" mAP@0.5   : {metrics.box.map50*100:.2f}%")
 print(f" Precision : {metrics.box.mp*100:.2f}%")
