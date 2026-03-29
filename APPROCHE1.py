@@ -1,11 +1,10 @@
 
-#  R-CNN + YOLOv11 - APPROCHE 1 COMPLET
-#  Auto-detect dataset paths
-
+#  APPROCHE 1 : R-CNN + YOLOv11
+#  Dataset: Shamta & Demir 2024
 
 import os, torch, torch.nn as nn, torch.optim as optim
 from torchvision import datasets, transforms, models
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 from ultralytics import YOLO
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
@@ -14,53 +13,31 @@ import json
 from tqdm import tqdm
 
 
-# 1. PATHS - AUTO DETECT
+# 1. PATHS
 
-BASE = "/content/drive/MyDrive/MEMOIRE"
+CLASS_TRAIN = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/train"
+DETECT_YAML = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/data.yaml"
 
-# Classification dataset
-CLASS_BASE = f"{BASE}/ForestFireDataset(Classifications)/ForestFireDataset"
-
-# Detection dataset  
-DETECT_BASE = f"{BASE}/ForesFireDataset(ObjectDetection)"
-DETECT_YAML = f"{DETECT_BASE}/data.yaml"
-
-# Auto-detect train/valid/test
-def find_split(base, split):
-    for name in [split, split.capitalize()]:
-        p = os.path.join(base, name)
-        if os.path.exists(p):
-            return p
-    # Si valid n'existe pas, utiliser test
-    if split == "valid":
-        return find_split(base, "test")
-    raise FileNotFoundError(f"Split '{split}' non trouvé dans {base}")
-
-TRAIN_DIR = find_split(CLASS_BASE, "train")
-VALID_DIR = find_split(CLASS_BASE, "valid")
-TEST_DIR  = find_split(CLASS_BASE, "test")
-
-print(" Paths détectés automatiquement:")
-print(f"   Train : {TRAIN_DIR}")
-print(f"   Valid : {VALID_DIR}")
-print(f"   Test  : {TEST_DIR}")
-print(f"   YAML  : {DETECT_YAML}")
+print(" Paths:")
+print(f"   Classification : {CLASS_TRAIN}")
+print(f"   Detection YAML : {DETECT_YAML}")
+print(f"   Classes        : {os.listdir(CLASS_TRAIN)}")
 
 
 # 2. CONFIG
 
-BATCH_SIZE    = 32
-NUM_EPOCHS    = 15
-LR            = 0.001
-NUM_CLASSES   = 2
-IMG_SIZE      = 224
-DEVICE        = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+BATCH_SIZE  = 32
+NUM_EPOCHS  = 15
+LR          = 0.001
+NUM_CLASSES = 2
+IMG_SIZE    = 224
+DEVICE      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"\n  Device: {DEVICE}")
 
 
-# 3. DATA TRANSFORMS
+# 3. DATASET - Split train/valid/test
 
-train_tf = transforms.Compose([
+tf_train = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.RandomHorizontalFlip(),
     transforms.RandomRotation(15),
@@ -68,32 +45,43 @@ train_tf = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])
 ])
-val_tf = transforms.Compose([
+tf_val = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.ToTensor(),
     transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])
 ])
 
-# ─────────────────────────────────────────
-# 4. DATASETS
-# ─────────────────────────────────────────
-print("\n Chargement dataset...")
-train_ds = datasets.ImageFolder(TRAIN_DIR, train_tf)
-valid_ds = datasets.ImageFolder(VALID_DIR, val_tf)
-test_ds  = datasets.ImageFolder(TEST_DIR,  val_tf)
+# Charger tout le dataset
+full_dataset = datasets.ImageFolder(CLASS_TRAIN, tf_train)
+CLASS_NAMES  = full_dataset.classes
+print(f"\n Dataset total : {len(full_dataset)} images")
+print(f"   Classes : {CLASS_NAMES}")
+
+# Split 70% train / 15% valid / 15% test
+total     = len(full_dataset)
+n_train   = int(0.70 * total)
+n_valid   = int(0.15 * total)
+n_test    = total - n_train - n_valid
+
+train_ds, valid_ds, test_ds = random_split(
+    full_dataset, [n_train, n_valid, n_test],
+    generator=torch.Generator().manual_seed(42)
+)
+
+# Appliquer val transform sur valid et test
+valid_ds.dataset.transform = tf_val
+test_ds.dataset.transform  = tf_val
 
 train_dl = DataLoader(train_ds, BATCH_SIZE, shuffle=True,  num_workers=2)
 valid_dl = DataLoader(valid_ds, BATCH_SIZE, shuffle=False, num_workers=2)
 test_dl  = DataLoader(test_ds,  BATCH_SIZE, shuffle=False, num_workers=2)
 
-CLASS_NAMES = train_ds.classes
-print(f" Classes: {CLASS_NAMES}")
-print(f"   Train:{len(train_ds)} | Valid:{len(valid_ds)} | Test:{len(test_ds)}")
+print(f"   Train : {n_train} | Valid : {n_valid} | Test : {n_test}")
 
 
-# 5. R-CNN MODEL (ResNet50)
+# 4. R-CNN MODEL (ResNet50)
 
-print("\n Création R-CNN...")
+print("\n Création R-CNN (ResNet50)...")
 model = models.resnet50(pretrained=True)
 for p in model.parameters():
     p.requires_grad = False
@@ -103,13 +91,14 @@ model.fc = nn.Sequential(
     nn.Linear(512, NUM_CLASSES)
 )
 model = model.to(DEVICE)
+print(" R-CNN prêt!")
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.fc.parameters(), lr=LR)
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
 
-# 6. TRAINING R-CNN
+# 5. TRAINING R-CNN
 
 print("\n Entraînement R-CNN...")
 history = {"train_loss":[],"train_acc":[],"val_loss":[],"val_acc":[]}
@@ -122,7 +111,7 @@ for epoch in range(NUM_EPOCHS):
     for imgs, lbls in tqdm(train_dl, desc=f"Epoch {epoch+1}/{NUM_EPOCHS}"):
         imgs, lbls = imgs.to(DEVICE), lbls.to(DEVICE)
         optimizer.zero_grad()
-        out = model(imgs)
+        out  = model(imgs)
         loss = criterion(out, lbls)
         loss.backward()
         optimizer.step()
@@ -139,26 +128,25 @@ for epoch in range(NUM_EPOCHS):
             vl += criterion(out, lbls).item() * imgs.size(0)
             vc += (out.argmax(1) == lbls).sum().item()
 
-    ta = tc/len(train_ds)*100
-    va = vc/len(valid_ds)*100
-    history["train_loss"].append(tl/len(train_ds))
+    ta = tc/n_train*100
+    va = vc/n_valid*100
+    history["train_loss"].append(tl/n_train)
     history["train_acc"].append(ta)
-    history["val_loss"].append(vl/len(valid_ds))
+    history["val_loss"].append(vl/n_valid)
     history["val_acc"].append(va)
-
-    print(f"Epoch {epoch+1:02d} | Train:{ta:.1f}% | Val:{va:.1f}%")
+    print(f"Epoch {epoch+1:02d} | Train: {ta:.1f}% | Val: {va:.1f}%")
 
     if va > best_acc:
         best_acc = va
         torch.save(model.state_dict(), "rcnn_best.pth")
-        print(f"    Saved! Best Val: {best_acc:.1f}%")
+        print(f" Best model saved! ({best_acc:.1f}%)")
 
     scheduler.step()
 
 
-# 7. TEST R-CNN
+# 6. TEST R-CNN
 
-print("\n Test R-CNN...")
+print("\n Évaluation R-CNN sur Test Set...")
 model.load_state_dict(torch.load("rcnn_best.pth"))
 model.eval()
 preds, labels = [], []
@@ -170,19 +158,32 @@ with torch.no_grad():
 
 print(classification_report(labels, preds, target_names=CLASS_NAMES))
 rcnn_acc = sum(p==l for p,l in zip(preds,labels))/len(labels)*100
-print(f" R-CNN Test Accuracy: {rcnn_acc:.2f}%")
+print(f" R-CNN Accuracy: {rcnn_acc:.2f}%")
 
-# Plot confusion matrix
+# Confusion Matrix
 cm = confusion_matrix(labels, preds)
 plt.figure(figsize=(6,5))
 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
             xticklabels=CLASS_NAMES, yticklabels=CLASS_NAMES)
-plt.title("R-CNN Confusion Matrix")
+plt.title("R-CNN - Matrice de Confusion")
 plt.savefig("rcnn_confusion.png", dpi=150)
 plt.show()
 
+# Learning Curves
+fig, axes = plt.subplots(1, 2, figsize=(12,4))
+axes[0].plot(history["train_acc"], label="Train")
+axes[0].plot(history["val_acc"],   label="Val")
+axes[0].set_title("R-CNN Accuracy")
+axes[0].legend(); axes[0].grid(True)
+axes[1].plot(history["train_loss"], label="Train")
+axes[1].plot(history["val_loss"],   label="Val")
+axes[1].set_title("R-CNN Loss")
+axes[1].legend(); axes[1].grid(True)
+plt.savefig("rcnn_curves.png", dpi=150)
+plt.show()
 
-# 8. YOLO TRAINING
+
+# 7. YOLO TRAINING
 
 print("\n Entraînement YOLOv11...")
 yolo = YOLO("yolo11n.pt")
@@ -198,22 +199,22 @@ yolo.train(
 )
 
 # YOLO Evaluation
-print("\n Test YOLOv11...")
+print("\n Évaluation YOLOv11...")
 yolo_best = YOLO("yolo_results/approche1/weights/best.pt")
-metrics = yolo_best.val(data=DETECT_YAML, split="test")
+metrics   = yolo_best.val(data=DETECT_YAML, split="test")
+print(f" mAP@0.5   : {metrics.box.map50*100:.2f}%")
+print(f" Precision : {metrics.box.mp*100:.2f}%")
+print(f" Recall    : {metrics.box.mr*100:.2f}%")
 
-print(f" mAP@0.5    : {metrics.box.map50*100:.2f}%")
-print(f" Precision  : {metrics.box.mp*100:.2f}%")
-print(f" Recall     : {metrics.box.mr*100:.2f}%")
 
-
-# 9. SAVE RESULTS
+# 8. RÉSULTATS FINAUX
 
 results = {
-    "RCNN_Accuracy": round(rcnn_acc, 2),
-    "YOLO_mAP50":    round(metrics.box.map50*100, 2),
-    "YOLO_Precision":round(metrics.box.mp*100, 2),
-    "YOLO_Recall":   round(metrics.box.mr*100, 2),
+    "Approche": "R-CNN + YOLOv11",
+    "RCNN_Accuracy" : round(rcnn_acc, 2),
+    "YOLO_mAP50"    : round(float(metrics.box.map50)*100, 2),
+    "YOLO_Precision": round(float(metrics.box.mp)*100, 2),
+    "YOLO_Recall"   : round(float(metrics.box.mr)*100, 2),
 }
 with open("approche1_results.json","w") as f:
     json.dump(results, f, indent=2)
