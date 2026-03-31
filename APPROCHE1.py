@@ -1,9 +1,9 @@
-
+# ============================================================
 #  APPROCHE 1 : R-CNN (Classification) + YOLOv11s (Détection)
 #  Dataset: Shamta & Demir 2024
+# ============================================================
 
-
-import os, torch, torch.nn as nn, torch.optim as optim
+import os, glob, torch, torch.nn as nn, torch.optim as optim
 from torchvision import datasets, transforms, models
 from torch.utils.data import DataLoader, random_split
 from ultralytics import YOLO
@@ -18,9 +18,8 @@ from tqdm import tqdm
 
 CLASS_TRAIN = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/train"
 DETECT_YAML = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/data.yaml"
-YOLO_BEST   = yolo.trainer.best 
 
-print(" Paths:")
+print("Paths:")
 print(f"   Classification : {CLASS_TRAIN}")
 print(f"   Detection YAML : {DETECT_YAML}")
 print(f"   Classes        : {os.listdir(CLASS_TRAIN)}")
@@ -34,7 +33,7 @@ LR          = 0.001
 NUM_CLASSES = 2
 IMG_SIZE    = 224
 DEVICE      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"\n  Device: {DEVICE}")
+print(f"\n Device: {DEVICE}")
 
 
 # 3. DATASET - Split 70/15/15
@@ -79,7 +78,7 @@ print(f"   Train:{n_train} | Valid:{n_valid} | Test:{n_test}")
 
 # 4. R-CNN MODEL (ResNet50)
 
-print("\n Création R-CNN (ResNet50)...")
+print("\n Creation R-CNN (ResNet50)...")
 model = models.resnet50(weights="IMAGENET1K_V1")
 for p in model.parameters():
     p.requires_grad = False
@@ -90,7 +89,7 @@ model.fc = nn.Sequential(
     nn.Linear(512, NUM_CLASSES)
 )
 model = model.to(DEVICE)
-print(" R-CNN prêt!")
+print("R-CNN pret!")
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.fc.parameters(), lr=LR)
@@ -99,7 +98,7 @@ scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
 # 5. TRAINING R-CNN
 
-print("\n Entraînement R-CNN...")
+print("\n Entrainement R-CNN...")
 history  = {"train_loss":[],"train_acc":[],"val_loss":[],"val_acc":[]}
 best_acc = 0.0
 
@@ -136,14 +135,14 @@ for epoch in range(NUM_EPOCHS):
     if va > best_acc:
         best_acc = va
         torch.save(model.state_dict(), "rcnn_best.pth")
-        print(f"    Best saved! ({best_acc:.1f}%)")
+        print(f"   Best saved! ({best_acc:.1f}%)")
 
     scheduler.step()
 
 
 # 6. TEST R-CNN
 
-print("\n Évaluation R-CNN...")
+print("\n Evaluation R-CNN...")
 model.load_state_dict(torch.load("rcnn_best.pth"))
 model.eval()
 preds, labels = [], []
@@ -155,7 +154,7 @@ with torch.no_grad():
 
 print(classification_report(labels, preds, target_names=CLASS_NAMES))
 rcnn_acc = sum(p==l for p,l in zip(preds,labels))/len(labels)*100
-print(f" R-CNN Accuracy: {rcnn_acc:.2f}%")
+print(f"R-CNN Accuracy: {rcnn_acc:.2f}%")
 
 # Confusion Matrix
 cm = confusion_matrix(labels, preds)
@@ -178,14 +177,13 @@ axes[1].set_title("R-CNN - Loss"); axes[1].legend(); axes[1].grid(True)
 plt.tight_layout()
 plt.savefig("rcnn_curves.png", dpi=150)
 plt.show()
-
-print(" Courbes sauvegardées: rcnn_curves.png, rcnn_confusion.png")
+print("Courbes sauvegardees!")
 
 
 # 7. YOLO TRAINING (yolo11s = small)
 
-print("\n Entraînement YOLOv11s...")
-yolo = YOLO("yolo11s.pt")   # ← s = small (meilleurs résultats que nano)
+print("\n Entrainement YOLOv11s...")
+yolo = YOLO("yolo11s.pt")
 yolo.train(
     data     = DETECT_YAML,
     epochs   = 50,
@@ -194,23 +192,30 @@ yolo.train(
     name     = "approche1",
     project  = "yolo_results",
     patience = 10,
-    exist_ok = True,          # ← évite l'erreur de dossier existant
+    exist_ok = True,
     device   = 0 if torch.cuda.is_available() else 'cpu'
 )
 
 
 # 8. YOLO EVALUATION
 
-print("\n Évaluation YOLOv11s...")
-yolo_best = YOLO(YOLO_BEST)
+print("\n Evaluation YOLOv11s...")
+
+# البحث التلقائي عن best.pt
+best_pt_list = glob.glob("/content/forest-fire-detection/runs/detect/**/best.pt", recursive=True)
+if not best_pt_list:
+    best_pt_list = glob.glob("/content/**/best.pt", recursive=True)
+
+print(f"   best.pt trouve : {best_pt_list[0]}")
+yolo_best = YOLO(best_pt_list[0])
 metrics   = yolo_best.val(data=DETECT_YAML, split="test")
 
-print(f" mAP@0.5   : {metrics.box.map50*100:.2f}%")
-print(f" Precision : {metrics.box.mp*100:.2f}%")
-print(f" Recall    : {metrics.box.mr*100:.2f}%")
+print(f"mAP@0.5   : {metrics.box.map50*100:.2f}%")
+print(f"Precision : {metrics.box.mp*100:.2f}%")
+print(f"Recall    : {metrics.box.mr*100:.2f}%")
 
 
-# 9. RÉSULTATS FINAUX
+# 9. RESULTATS FINAUX
 
 results = {
     "Approche"      : "R-CNN + YOLOv11s",
@@ -222,5 +227,5 @@ results = {
 with open("approche1_results.json","w") as f:
     json.dump(results, f, indent=2)
 
-print("\n APPROCHE 1 TERMINÉE!")
+print("\n APPROCHE 1 TERMINEE!")
 print(json.dumps(results, indent=2))
