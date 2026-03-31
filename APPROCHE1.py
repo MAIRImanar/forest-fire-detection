@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 CLASS_TRAIN = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/train"
 DETECT_YAML = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/data.yaml"
-YOLO_BEST   = "/content/forest-fire-detection/runs/detect/yolo_results/approche1/weights/best.pt"
+YOLO_BEST   = yolo.trainer.best 
 
 print(" Paths:")
 print(f"   Classification : {CLASS_TRAIN}")
@@ -215,9 +215,6 @@ print(f" Recall    : {metrics.box.mr*100:.2f}%")
 results = {
     "Approche"      : "R-CNN + YOLOv11s",
     "RCNN_Accuracy" : round(rcnn_acc, 2),
-    "RCNN_Precision": 98.0,
-    "RCNN_Recall"   : 98.0,
-    "RCNN_F1"       : 98.0,
     "YOLO_mAP50"    : round(float(metrics.box.map50)*100, 2),
     "YOLO_Precision": round(float(metrics.box.mp)*100, 2),
     "YOLO_Recall"   : round(float(metrics.box.mr)*100, 2),
