@@ -1,6 +1,5 @@
 # ============================================================
-#  APPROCHE 1 : R-CNN (Classification) + YOLOv11s (Détection)
-#  Dataset: Shamta & Demir 2024
+#  training R-CNN (Classification) + YOLOv11s (Détection)
 # ============================================================
 
 import os, glob, torch, torch.nn as nn, torch.optim as optim
@@ -201,7 +200,6 @@ yolo.train(
 
 print("\n Evaluation YOLOv11s...")
 
-# البحث التلقائي عن best.pt
 best_pt_list = glob.glob("/content/forest-fire-detection/runs/detect/**/best.pt", recursive=True)
 if not best_pt_list:
     best_pt_list = glob.glob("/content/**/best.pt", recursive=True)
