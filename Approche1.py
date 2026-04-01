@@ -45,7 +45,7 @@ print(f"\nDevice: {DEVICE}")
 
 
 # 3. DATASET — Split 70 / 15 / 15
-─
+
 tf_train = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.RandomHorizontalFlip(),
@@ -297,6 +297,7 @@ print(f"Recall       : {yolo_recall:.2f}%")
 
 # 9. PIPELINE COMPLET: R-CNN → YOLO
 #    Visualisation des Bounding Boxes 
+
 print("\nVisualisation du pipeline R-CNN → YOLO sur des exemples de test...")
 
 # Récupération des images du test set
