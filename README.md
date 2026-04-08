@@ -1,1 +1,1 @@
-# forest-fire-detection
+#  My start-up: forest-fire-detection
