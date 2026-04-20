@@ -293,11 +293,10 @@ print(f"Recall       : {yolo_recall:.2f}%")
 
 
 # 8b. MATRICE DE CONFUSION DÉTECTION — Strong / Medium / Weak Fire
-    print("\nGénération de la matrice de confusion détection (niveaux de feu)...")
+print("\nGénération de la matrice de confusion détection (niveaux de feu)...")
 
-    # Catégorisation basée sur mAP@0.5
-    def categorize_fire(map50_score):
-        if map50_score >= 70:
+def categorize_fire(map50_score):
+    if map50_score >= 70:
             return "Strong\nFire\n(mAP≥70%)"
         elif map50_score >= 30:
             return "Medium\nFire\n(30%≤mAP<70%)"
