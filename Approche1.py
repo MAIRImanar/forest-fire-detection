@@ -34,7 +34,7 @@ print(f"Classes trouvées       : {os.listdir(CLASS_TRAIN)}")
 # 2. CONFIG
 
 BATCH_SIZE  = 32
-NUM_EPOCHS  = 15
+NUM_EPOCHS  = 1
 LR          = 0.001
 NUM_CLASSES = 2
 IMG_SIZE    = 224
@@ -248,7 +248,7 @@ print("\n[4/5] Entraînement YOLOv11s...")
 yolo = YOLO("yolo11s.pt")
 yolo.train(
     data     = DETECT_YAML,
-    epochs   = 50,
+    epochs   = 1,
     imgsz    = 640,
     batch    = 16,
     name     = "approche1_yolo",
