@@ -1,7 +1,7 @@
 #  APPROCHE 1 : R-CNN (Classification) → YOLOv11s (Détection)
 #  Pipeline: Image → R-CNN (fire/no fire?) → If fire → YOLO (where?)
 
-import os, glob, torch, torch.nn as nn, torch.optim as optim, time
+import os, glob, torch, torch.nn as nn, torch.optim as optim, time,  yaml
 from torchvision import datasets, transforms, models
 from torch.utils.data import DataLoader, random_split, Subset
 from ultralytics import YOLO
@@ -24,9 +24,7 @@ DETECT_YAML = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/
 OUTPUT_DIR = "/content/drive/MyDrive/MEMOIRE/Approche1_Results"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-print("=" * 60)
-print("  APPROCHE 1 : R-CNN → YOLOv11s")
-print("=" * 60)
+print("  APPROCHE 1 : R-CNN → YOLOv11s  ")
 print(f"Classification dataset : {CLASS_TRAIN}")
 print(f"Detection YAML         : {DETECT_YAML}")
 print(f"Résultats sauvegardés  : {OUTPUT_DIR}")
@@ -292,6 +290,145 @@ print(f"mAP@0.5      : {yolo_map50:.2f}%")
 print(f"mAP@0.5:0.95 : {yolo_map5095:.2f}%")
 print(f"Precision    : {yolo_precision:.2f}%")
 print(f"Recall       : {yolo_recall:.2f}%")
+
+
+# 8b. MATRICE DE CONFUSION DÉTECTION — Strong / Medium / Weak Fire
+    print("\nGénération de la matrice de confusion détection (niveaux de feu)...")
+
+    # Catégorisation basée sur mAP@0.5
+    def categorize_fire(map50_score):
+        if map50_score >= 70:
+            return "Strong\nFire\n(mAP≥70%)"
+        elif map50_score >= 30:
+            return "Medium\nFire\n(30%≤mAP<70%)"
+        else:
+            return "Weak\nFire\n(mAP<30%)"
+
+    # Construire la matrice de confusion détection par image
+    # On évalue chaque image du test set YOLO individuellement
+    yolo_test_results = yolo_best.val(data=DETECT_YAML, split="test", verbose=False)
+
+    # Récupérer les stats par image via predict sur le dossier test
+    with open(DETECT_YAML, 'r') as f:
+        yaml_data = yaml.safe_load(f)
+    test_images_dir = yaml_data.get('test', '')
+    if not os.path.isabs(test_images_dir):
+        test_images_dir = os.path.join(os.path.dirname(DETECT_YAML), test_images_dir)
+
+    # Prédictions sur chaque image test
+    all_img_paths = glob.glob(os.path.join(test_images_dir, "*.jpg")) + \
+                    glob.glob(os.path.join(test_images_dir, "*.png"))
+
+    per_image_conf = []  # confidence moyenne par image détectée
+    n_detected     = 0
+    n_missed       = 0   # images sans détection (faux négatifs)
+    n_false_alarm  = 0   # sera estimé via les images nofire si disponibles
+
+    for img_path in all_img_paths[:200]:  # limiter pour la vitesse
+        res = yolo_best(img_path, verbose=False)[0]
+        if res.boxes is not None and len(res.boxes) > 0:
+            confs = [float(b.conf[0]) for b in res.boxes]
+            avg_conf = np.mean(confs) * 100
+            per_image_conf.append(avg_conf)
+            n_detected += 1
+        else:
+            per_image_conf.append(0)
+            n_missed += 1
+
+    # Classer chaque détection en Strong/Medium/Weak selon conf moyenne
+    strong = sum(1 for c in per_image_conf if c >= 70)
+    medium = sum(1 for c in per_image_conf if 30 <= c < 70)
+    weak   = sum(1 for c in per_image_conf if 0 < c < 30)
+    missed = n_missed
+
+    # Matrice : Prédit (colonnes) vs Réel (lignes)
+    # Ici on construit une matrice de performance par niveau
+    # Lignes = niveau réel estimé par mAP global
+    # Colonnes = niveau prédit par confidence image
+
+    map_val = yolo_map50  # déjà calculé (en %)
+
+    # Matrice 3x3 : Strong / Medium / Weak
+    # On distribue les détections selon leur conf vs le niveau global mAP
+    det_matrix = np.zeros((3, 3), dtype=int)
+    categories = ['Strong\nFire', 'Medium\nFire', 'Weak\nFire']
+
+    for conf in per_image_conf:
+        if conf == 0:
+            continue  # non détecté, ignoré ici
+        # Niveau prédit (par conf image)
+        if conf >= 70:   pred_lvl = 0  # Strong
+        elif conf >= 30: pred_lvl = 1  # Medium
+        else:            pred_lvl = 2  # Weak
+
+        # Niveau réel (par mAP global du modèle)
+        if map_val >= 70:   true_lvl = 0
+        elif map_val >= 30: true_lvl = 1
+        else:               true_lvl = 2
+
+        det_matrix[true_lvl][pred_lvl] += 1
+
+    # Affichage
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    fig.suptitle("Analyse de Détection YOLO — Niveaux de Feu (Approche 1)",
+                 fontsize=14, fontweight='bold')
+
+    # --- Subplot 1 : Matrice de confusion détection ---
+    ax1 = axes[0]
+    sns.heatmap(det_matrix, annot=True, fmt='d', cmap='YlOrRd',
+                xticklabels=categories, yticklabels=categories,
+                annot_kws={"size": 13, "weight": "bold"},
+                ax=ax1, linewidths=0.5, linecolor='gray')
+    ax1.set_title("Matrice de Confusion — Détection\n(Niveau Réel vs Niveau Prédit)",
+                  fontsize=12, fontweight='bold')
+    ax1.set_xlabel("Niveau Prédit\n(par confidence image)", fontsize=11)
+    ax1.set_ylabel("Niveau Réel\n(par mAP@0.5 global)", fontsize=11)
+
+    # --- Subplot 2 : Distribution des niveaux détectés ---
+    ax2 = axes[1]
+    labels_bar  = ['Strong\nFire\n(conf≥70%)', 'Medium\nFire\n(30-70%)',
+                   'Weak\nFire\n(conf<30%)', 'Non\nDétecté']
+    values_bar  = [strong, medium, weak, missed]
+    colors_bar  = ['#d32f2f', '#f57c00', '#fbc02d', '#90a4ae']
+
+    bars = ax2.bar(labels_bar, values_bar, color=colors_bar, edgecolor='black', linewidth=0.8)
+    for bar, val in zip(bars, values_bar):
+        ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                 str(val), ha='center', va='bottom', fontweight='bold', fontsize=12)
+
+    # Ligne mAP
+    map_color = '#d32f2f' if map_val >= 70 else ('#f57c00' if map_val >= 30 else '#fbc02d')
+    fire_level = categorize_fire(map_val).replace('\n', ' ')
+    ax2.set_title(f"Distribution des Détections par Niveau\nmAP@0.5 = {map_val:.1f}% → {fire_level}",
+                  fontsize=12, fontweight='bold', color=map_color)
+    ax2.set_ylabel("Nombre d'images", fontsize=11)
+    ax2.set_xlabel("Niveau de Feu Détecté", fontsize=11)
+    ax2.grid(axis='y', alpha=0.4)
+
+    # Légende mAP
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='#d32f2f', label='Strong Fire : mAP ≥ 70%'),
+        Patch(facecolor='#f57c00', label='Medium Fire : 30% ≤ mAP < 70%'),
+        Patch(facecolor='#fbc02d', label='Weak Fire   : mAP < 30%'),
+    ]
+    ax2.legend(handles=legend_elements, loc='upper right', fontsize=9)
+
+    plt.tight_layout()
+    det_matrix_path = os.path.join(OUTPUT_DIR, "yolo_detection_fire_levels.png")
+    plt.savefig(det_matrix_path, dpi=200, bbox_inches='tight')
+    plt.show()
+    print(f"Matrice détection niveaux de feu sauvegardée: {det_matrix_path}")
+
+    # Résumé textuel
+    print(f"\n{'='*50}")
+    print(f"ANALYSE NIVEAUX DE FEU (mAP@0.5 = {map_val:.1f}%)")
+    print(f"{'='*50}")
+    print(f"Niveau global du modèle : {categorize_fire(map_val).replace(chr(10), ' ')}")
+    print(f"Images Strong Fire (conf≥70%) : {strong}")
+    print(f"Images Medium Fire (30-70%)   : {medium}")
+    print(f"Images Weak Fire   (conf<30%) : {weak}")
+    print(f"Images Non détectées          : {missed}")
 
 
 
