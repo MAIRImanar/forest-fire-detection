@@ -249,7 +249,7 @@ print("\n[3/6] Entrainement YOLO-Detect (yolo11s)...")
 yolo_det = YOLO("yolo11s.pt")
 yolo_det.train(
     data     = DETECT_YAML,
-    epochs   = 50,
+    epochs   = 1,
     imgsz    = 640,
     batch    = 16,
     name     = "approche2_detect",
