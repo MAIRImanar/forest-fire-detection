@@ -69,7 +69,7 @@ print("\n[1/6] Fine-tuning YOLO-Classify (70/15/15)...")
 yolo_cls = YOLO("yolo11s-cls.pt")
 yolo_cls.train(
     data          = CLASS_TRAIN,
-    epochs        = 1,
+    epochs        = 50,
     imgsz         = 224,
     batch         = 32,
     name          = "approche2_classify",
