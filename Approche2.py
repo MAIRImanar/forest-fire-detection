@@ -82,7 +82,7 @@ print("\n[1/6] Chargement modele YOLO-Classify pre-entraine...")
 yolo_cls = YOLO("yolo11s-cls.pt")
 yolo_cls.train(
     data     = CLASS_TRAIN,
-    epochs   = 30,
+    epochs   = 1,
     imgsz    = 224,
     batch    = 32,
     name     = "approche2_classify",
@@ -214,7 +214,7 @@ print("\n[3/6] Chargement modele YOLO-Detect pre-entraine...")
 yolo_det = YOLO("yolo11s.pt")
 yolo_det.train(
     data     = DETECT_YAML,
-    epochs   = 30,
+    epochs   = 1,
     imgsz    = 640,
     batch    = 16,
     name     = "approche2_detect",
