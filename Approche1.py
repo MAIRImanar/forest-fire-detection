@@ -1,5 +1,22 @@
+# ============================================================
 #  APPROCHE 1 : R-CNN (Classification) -> YOLOv11s (Detection)
 #  Pipeline: Image -> R-CNN (fire/no fire?) -> If fire -> YOLO (where?)
+#  Dataset: Shamta & Demir 2024
+# ============================================================
+#
+#  RESULTATS POUR LA MEMOIRE:
+#  R-CNN Accuracy, Precision, Recall, F1
+#  Confusion Matrix R-CNN  (fire / nofire)
+#  Learning Curves R-CNN
+#  YOLO mAP@0.5, Precision, Recall
+#  Confusion Matrix YOLO Detection (Strong / Medium / Weak Fire)
+#       Strong Fire : confidence > 70%
+#       Medium Fire : confidence 30% - 70%
+#       Weak Fire   : confidence < 30%
+#  Distribution des confidence scores YOLO
+#  Bounding Box visualizations avec couleur par intensite
+#  Pipeline complet avec temps de traitement
+# ============================================================
 
 import os, glob, torch, torch.nn as nn, torch.optim as optim, time
 from torchvision import datasets, transforms, models
@@ -17,12 +34,12 @@ from PIL import Image
 from collections import defaultdict
 
 
-
+# ---------------------------------------------
 # 1. PATHS
-
+# ---------------------------------------------
 CLASS_TRAIN = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/train"
 DETECT_YAML = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/data.yaml"
-OUTPUT_DIR  = "/content/drive/MyDrive/MEMOIRE/Approche1_Results2"
+OUTPUT_DIR  = "/content/drive/MyDrive/MEMOIRE/Approche1_Results22"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Seuils confidence pour Strong / Medium / Weak
@@ -37,8 +54,10 @@ print(f"Detection YAML         : {DETECT_YAML}")
 print(f"Resultats sauvegardes  : {OUTPUT_DIR}")
 print(f"Classes trouvees       : {os.listdir(CLASS_TRAIN)}")
 
-# 2. CONFIG
 
+# ---------------------------------------------
+# 2. CONFIG
+# ---------------------------------------------
 BATCH_SIZE  = 32
 NUM_EPOCHS  = 1
 LR          = 0.001
@@ -48,9 +67,9 @@ DEVICE      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"\nDevice: {DEVICE}")
 
 
-
+# ---------------------------------------------
 # 3. DATASET - Split 70 / 15 / 15
-
+# ---------------------------------------------
 tf_train = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.RandomHorizontalFlip(),
@@ -89,9 +108,9 @@ test_dl  = DataLoader(test_ds_proper,  BATCH_SIZE, shuffle=False, num_workers=2,
 print(f"Train: {n_train} | Valid: {n_valid} | Test: {n_test}")
 
 
-
+# ---------------------------------------------
 # 4. R-CNN MODEL (ResNet50 fine-tuned)
-
+# ---------------------------------------------
 print("\n[1/6] Creation du modele R-CNN (ResNet50)...")
 
 model = models.resnet50(weights="IMAGENET1K_V1")
@@ -118,9 +137,9 @@ optimizer = optim.Adam([
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
 
-
+# ---------------------------------------------
 # 5. TRAINING R-CNN
-
+# ---------------------------------------------
 print("\n[2/6] Entrainement R-CNN...")
 history    = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
 best_acc   = 0.0
@@ -167,9 +186,9 @@ for epoch in range(NUM_EPOCHS):
 print(f"\nMeilleur modele: Epoch {best_epoch} avec Val Acc = {best_acc:.1f}%")
 
 
-
+# ---------------------------------------------
 # 6. EVALUATION R-CNN (TEST SET)
-
+# ---------------------------------------------
 print("\n[3/6] Evaluation R-CNN sur le test set...")
 model.load_state_dict(torch.load(os.path.join(OUTPUT_DIR, "rcnn_best.pth")))
 model.eval()
@@ -233,9 +252,9 @@ plt.show()
 print("Learning curves sauvegardees")
 
 
-
+# ---------------------------------------------
 # 7. YOLO TRAINING (yolo11s)
-
+# ---------------------------------------------
 print("\n[4/6] Entrainement YOLOv11s...")
 yolo = YOLO("yolo11s.pt")
 yolo.train(
@@ -252,8 +271,9 @@ yolo.train(
 )
 
 
+# ---------------------------------------------
 # 8. YOLO EVALUATION GLOBALE
-
+# ---------------------------------------------
 print("\n[5/6] Evaluation YOLOv11s...")
 
 best_pt_list = glob.glob(os.path.join(OUTPUT_DIR, "yolo_runs/**/best.pt"), recursive=True)
@@ -282,9 +302,9 @@ print(f"Precision    : {yolo_precision:.2f}%")
 print(f"Recall       : {yolo_recall:.2f}%")
 
 
-
+# ---------------------------------------------
 # HELPER: confidence -> classe intensite
-
+# ---------------------------------------------
 def conf_to_intensity(conf):
     """Retourne (index, label, couleur) selon le confidence score."""
     if conf >= STRONG_THRESH:
@@ -295,10 +315,11 @@ def conf_to_intensity(conf):
         return 2, "Weak Fire",   "#f1c40f"
 
 
+# ---------------------------------------------
 # 9. CONFUSION MATRIX YOLO DETECTION
 #    Lignes = Ground Truth (fire/nofire)
 #    Colonnes = Intensite predite (Strong/Medium/Weak/No Detection)
-
+# ---------------------------------------------
 print("\n[6/6] Matrice de confusion detection YOLO (Strong/Medium/Weak)...")
 
 DETECT_TEST_IMG = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/images"
@@ -402,7 +423,6 @@ print(f"Confusion matrix detection sauvegardee: {path_cm}")
 
 
 # --- FIGURE B : Distribution des confidence scores ---
-
 if conf_all:
     fig_dist, ax_dist = plt.subplots(figsize=(10, 5))
     n_hist, bins_hist, hist_patches = ax_dist.hist(conf_all, bins=30,
@@ -440,8 +460,9 @@ else:
     print("Aucune detection - distribution non generee")
 
 
+# ---------------------------------------------
 # 10. PIPELINE VISUALISATION (Bounding Boxes colores)
-
+# ---------------------------------------------
 print("\nVisualisation pipeline R-CNN -> YOLO avec couleurs intensite...")
 
 test_img_paths  = []
@@ -539,8 +560,9 @@ plt.show()
 print(f"Visualisations pipeline sauvegardees: {path_vis}")
 
 
+# ---------------------------------------------
 # 11. BENCHMARK TIMING
-
+# ---------------------------------------------
 print("\nMesure du temps de traitement du pipeline...")
 times_rcnn, times_yolo, times_total = [], [], []
 
@@ -571,8 +593,9 @@ print(f"Temps moyen YOLO    : {avg_yolo:.1f} ms")
 print(f"Temps total pipeline: {avg_total:.1f} ms  ({1000/avg_total:.1f} FPS)")
 
 
+# ---------------------------------------------
 # 12. RÉSUMÉ FINAL JSON
-
+# ---------------------------------------------
 strong_pct = counts[0] / total_boxes * 100 if total_boxes > 0 else 0
 medium_pct = counts[1] / total_boxes * 100 if total_boxes > 0 else 0
 weak_pct   = counts[2] / total_boxes * 100 if total_boxes > 0 else 0
