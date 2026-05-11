@@ -1,25 +1,10 @@
 # ============================================================
 #  APPROCHE 2 : YOLOv11s (Classification) -> YOLOv11s (Detection)
 #  Pipeline: Image -> YOLO Classify (fire/no fire?) -> If fire -> YOLO Detect (where?)
-#  Dataset: Shamta & Demir 2024
-# ============================================================
-#
-#  RESULTATS POUR LA MEMOIRE:
-#  YOLO-Classify Accuracy, Precision, Recall, F1
-#  Confusion Matrix YOLO-Classify (fire / nofire)
-#  Learning Curves YOLO-Classify
-#  YOLO-Detect mAP@0.5, Precision, Recall
-#  Confusion Matrix YOLO Detection (Strong / Medium / Weak Fire)
-#       Strong Fire : confidence > 70%
-#       Medium Fire : confidence 30% - 70%
-#       Weak Fire   : confidence < 30%
-#  Distribution des confidence scores YOLO-Detect
-#  Bounding Box visualizations avec couleur par intensite
-#  Pipeline complet avec temps de traitement
-#  JSON pour comparaison avec Approche 1
+#  Dataset: Roboflow Universe (modeles pre-entraines)
 # ============================================================
 
-import os, glob, time, json
+import os, glob, time, json, random
 from ultralytics import YOLO
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
@@ -31,13 +16,33 @@ from PIL import Image
 from collections import defaultdict
 import torch
 
+# ============================================================
+# 0. INSTALLER ET TELECHARGER DEPUIS ROBOFLOW
+# ============================================================
+!pip install roboflow ultralytics -q
+
+from roboflow import Roboflow
+
+API_KEY = "5CsC6ZJ6lPNWaeVu3Vmd"  # <- Roboflow > Settings > API > copie ta clé ici
+rf = Roboflow(api_key=API_KEY)
+
+# --- Télécharger dataset Classification ---
+project_cls  = rf.workspace("sayed-gamall").project("fire-smoke-detection-yolov11")
+dataset_cls  = project_cls.version(2).download("yolov11")
+
+# --- Télécharger dataset Detection ---
+project_det  = rf.workspace("ffd").project("forest-fire-detection-qkpap")
+dataset_det  = project_det.version(1).download("yolov11")
 
 # ---------------------------------------------
 # 1. PATHS
 # ---------------------------------------------
-CLASS_TRAIN  = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/train"
-CLASS_YAML   = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/data.yaml"
-DETECT_YAML  = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/data.yaml"
+CLASS_TRAIN  = os.path.join(dataset_cls.location, "train")
+CLASS_YAML   = os.path.join(dataset_cls.location, "data.yaml")
+DETECT_YAML  = os.path.join(dataset_det.location, "data.yaml")
+DETECT_TEST_IMG = os.path.join(dataset_det.location, "test", "images")
+DETECT_TEST_LBL = os.path.join(dataset_det.location, "test", "labels")
+
 OUTPUT_DIR   = "/content/drive/MyDrive/MEMOIRE/Approche2_Results"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -59,7 +64,6 @@ print(f"Device              : {'cuda' if torch.cuda.is_available() else 'cpu'}")
 # HELPER: confidence -> intensite
 # ---------------------------------------------
 def conf_to_intensity(conf):
-    """Retourne (index, label, couleur) selon confidence score."""
     if conf >= STRONG_THRESH:
         return 0, "Strong Fire", "#c0392b"
     elif conf >= WEAK_THRESH:
@@ -69,20 +73,16 @@ def conf_to_intensity(conf):
 
 
 # ============================================================
-# PARTIE A — YOLO CLASSIFICATION
+# PARTIE A — YOLO CLASSIFICATION (modele pre-entraine)
 # ============================================================
 
-# ---------------------------------------------
-# 2. YOLO CLASSIFY TRAINING
-# ---------------------------------------------
-print("\n[1/6] Entrainement YOLO-Classify (yolo11s-cls)...")
+print("\n[1/6] Chargement modele YOLO-Classify pre-entraine...")
 
-# NOTE: si data.yaml n existe pas pour la classification,
-# on peut pointer directement vers le dossier train
+# Entrainement sur le dataset Roboflow (fine-tuning rapide)
 yolo_cls = YOLO("yolo11s-cls.pt")
 yolo_cls.train(
-    data     = CLASS_TRAIN,   # dossier avec sous-dossiers fire/ et nofire/
-    epochs   = 1,
+    data     = CLASS_TRAIN,
+    epochs   = 30,
     imgsz    = 224,
     batch    = 32,
     name     = "approche2_classify",
@@ -96,11 +96,10 @@ print("Entrainement YOLO-Classify termine!")
 
 
 # ---------------------------------------------
-# 3. YOLO CLASSIFY EVALUATION
+# EVALUATION CLASSIFICATION
 # ---------------------------------------------
 print("\n[2/6] Evaluation YOLO-Classify...")
 
-# Recherche best.pt classify
 cls_best_list = glob.glob(os.path.join(OUTPUT_DIR, "cls_runs/**/best.pt"), recursive=True)
 if not cls_best_list:
     raise FileNotFoundError("best.pt classify introuvable!")
@@ -109,31 +108,18 @@ print(f"best.pt classify: {cls_best_path}")
 
 yolo_cls_best = YOLO(cls_best_path)
 
-# Validation sur le test set
-cls_metrics = yolo_cls_best.val(
-    data    = CLASS_TRAIN,
-    split   = "test",
-    imgsz   = 224,
-    batch   = 32,
-    device  = DEVICE,
-)
-
-# Extraire les metriques
-cls_accuracy  = float(cls_metrics.top1)   * 100
-cls_top5      = float(cls_metrics.top5)   * 100
-
+cls_metrics  = yolo_cls_best.val(data=CLASS_TRAIN, split="test", imgsz=224, batch=32, device=DEVICE)
+cls_accuracy = float(cls_metrics.top1) * 100
+cls_top5     = float(cls_metrics.top5) * 100
 print(f"Top-1 Accuracy : {cls_accuracy:.2f}%")
 print(f"Top-5 Accuracy : {cls_top5:.2f}%")
 
-# --- Inference manuelle pour Precision/Recall/F1 et Confusion Matrix ---
+# --- Inference manuelle pour Precision/Recall/F1 ---
 print("\nCalcul Precision/Recall/F1 sur le test set...")
-
-# Reconstruire test set manuellement (split 70/15/15 comme Approche 1)
-import random
 random.seed(42)
 all_samples = []
-class_dirs = sorted([d for d in os.listdir(CLASS_TRAIN)
-                     if os.path.isdir(os.path.join(CLASS_TRAIN, d))])
+class_dirs  = sorted([d for d in os.listdir(CLASS_TRAIN)
+                      if os.path.isdir(os.path.join(CLASS_TRAIN, d))])
 CLASS_NAMES = class_dirs
 print(f"Classes: {CLASS_NAMES}")
 
@@ -153,17 +139,15 @@ print(f"Test set: {len(all_samples)} images")
 
 preds_cls, labels_cls = [], []
 for img_path, true_label in all_samples:
-    result = yolo_cls_best(img_path, verbose=False, imgsz=224)[0]
+    result     = yolo_cls_best(img_path, verbose=False, imgsz=224)[0]
     pred_label = int(result.probs.top1)
     preds_cls.append(pred_label)
     labels_cls.append(true_label)
 
-# Rapport classification
 print("\n" + "="*50)
-print("RAPPORT YOLO-Classify (Classification)")
+print("RAPPORT YOLO-Classify")
 print("="*50)
-report_cls = classification_report(labels_cls, preds_cls,
-                                   target_names=CLASS_NAMES, digits=4)
+report_cls     = classification_report(labels_cls, preds_cls, target_names=CLASS_NAMES, digits=4)
 print(report_cls)
 cls_acc_manual = sum(p == l for p, l in zip(preds_cls, labels_cls)) / len(labels_cls) * 100
 print(f"Accuracy manuelle: {cls_acc_manual:.2f}%")
@@ -177,10 +161,8 @@ with open(os.path.join(OUTPUT_DIR, "yolo_cls_classification_report.txt"), "w") a
 cm_cls = confusion_matrix(labels_cls, preds_cls)
 plt.figure(figsize=(7, 6))
 sns.heatmap(cm_cls, annot=True, fmt='d', cmap='Oranges',
-            xticklabels=CLASS_NAMES, yticklabels=CLASS_NAMES,
-            annot_kws={"size": 14})
-plt.title("YOLO-Classify - Matrice de Confusion (Approche 2)",
-          fontsize=14, fontweight='bold')
+            xticklabels=CLASS_NAMES, yticklabels=CLASS_NAMES, annot_kws={"size": 14})
+plt.title("YOLO-Classify - Matrice de Confusion (Approche 2)", fontsize=14, fontweight='bold')
 plt.xlabel("Prediction", fontsize=12)
 plt.ylabel("Realite", fontsize=12)
 plt.tight_layout()
@@ -189,25 +171,20 @@ plt.savefig(path_cm_cls, dpi=200, bbox_inches='tight')
 plt.show()
 print(f"Confusion matrix classify sauvegardee: {path_cm_cls}")
 
-# --- Learning Curves (depuis les resultats YOLO) ---
-# YOLO sauvegarde results.csv dans le dossier du run
-results_csv_list = glob.glob(
-    os.path.join(OUTPUT_DIR, "cls_runs/**/results.csv"), recursive=True)
-
+# --- Learning Curves ---
+results_csv_list = glob.glob(os.path.join(OUTPUT_DIR, "cls_runs/**/results.csv"), recursive=True)
 if results_csv_list:
     import csv
     epochs_list, train_loss_list, val_acc_list = [], [], []
     with open(results_csv_list[0], newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            # Nettoyer les noms de colonnes (espaces)
             row = {k.strip(): v.strip() for k, v in row.items()}
             try:
                 epochs_list.append(int(float(row.get('epoch', 0))))
-                # Colonnes YOLO classify
                 train_loss_list.append(float(row.get('train/loss', row.get('loss', 0))))
                 val_acc_list.append(float(row.get('metrics/accuracy_top1',
-                                   row.get('val/acc_top1', 0))) * 100)
+                                    row.get('val/acc_top1', 0))) * 100)
             except (ValueError, KeyError):
                 continue
 
@@ -215,41 +192,29 @@ if results_csv_list:
         fig_lc, axes_lc = plt.subplots(1, 2, figsize=(13, 5))
         fig_lc.suptitle("YOLO-Classify - Courbes d'Apprentissage (Approche 2)",
                          fontsize=14, fontweight='bold')
-
-        axes_lc[0].plot(epochs_list, val_acc_list, 'r-o', markersize=4, label="Val Accuracy")
+        axes_lc[0].plot(epochs_list, val_acc_list,    'r-o', markersize=4, label="Val Accuracy")
         axes_lc[0].set_title("Accuracy"); axes_lc[0].set_xlabel("Epoch")
-        axes_lc[0].set_ylabel("Accuracy (%)"); axes_lc[0].legend()
-        axes_lc[0].grid(True, alpha=0.4)
-
+        axes_lc[0].set_ylabel("Accuracy (%)"); axes_lc[0].legend(); axes_lc[0].grid(True, alpha=0.4)
         axes_lc[1].plot(epochs_list, train_loss_list, 'b-o', markersize=4, label="Train Loss")
         axes_lc[1].set_title("Loss"); axes_lc[1].set_xlabel("Epoch")
-        axes_lc[1].set_ylabel("Loss"); axes_lc[1].legend()
-        axes_lc[1].grid(True, alpha=0.4)
-
+        axes_lc[1].set_ylabel("Loss"); axes_lc[1].legend(); axes_lc[1].grid(True, alpha=0.4)
         plt.tight_layout()
         path_lc = os.path.join(OUTPUT_DIR, "yolo_cls_learning_curves.png")
         plt.savefig(path_lc, dpi=200, bbox_inches='tight')
         plt.show()
         print(f"Learning curves sauvegardees: {path_lc}")
-    else:
-        print("Donnees insuffisantes pour learning curves")
-else:
-    print("results.csv introuvable - learning curves non generees")
 
 
 # ============================================================
-# PARTIE B — YOLO DETECTION
+# PARTIE B — YOLO DETECTION (modele pre-entraine)
 # ============================================================
 
-# ---------------------------------------------
-# 4. YOLO DETECT TRAINING
-# ---------------------------------------------
-print("\n[3/6] Entrainement YOLO-Detect (yolo11s)...")
+print("\n[3/6] Chargement modele YOLO-Detect pre-entraine...")
 
 yolo_det = YOLO("yolo11s.pt")
 yolo_det.train(
     data     = DETECT_YAML,
-    epochs   = 1,
+    epochs   = 30,
     imgsz    = 640,
     batch    = 16,
     name     = "approche2_detect",
@@ -261,12 +226,8 @@ yolo_det.train(
 )
 print("Entrainement YOLO-Detect termine!")
 
-
-# ---------------------------------------------
-# 5. YOLO DETECT EVALUATION
-# ---------------------------------------------
+# --- Evaluation Detection ---
 print("\n[4/6] Evaluation YOLO-Detect...")
-
 det_best_list = glob.glob(os.path.join(OUTPUT_DIR, "det_runs/**/best.pt"), recursive=True)
 if not det_best_list:
     raise FileNotFoundError("best.pt detect introuvable!")
@@ -281,24 +242,18 @@ det_map5095   = float(det_metrics.box.map)   * 100
 det_precision = float(det_metrics.box.mp)    * 100
 det_recall    = float(det_metrics.box.mr)    * 100
 
-print("\n" + "="*50)
-print("RAPPORT YOLO-Detect")
-print("="*50)
-print(f"mAP@0.5      : {det_map50:.2f}%")
+print(f"\nmAP@0.5      : {det_map50:.2f}%")
 print(f"mAP@0.5:0.95 : {det_map5095:.2f}%")
 print(f"Precision    : {det_precision:.2f}%")
 print(f"Recall       : {det_recall:.2f}%")
 
 
-# ---------------------------------------------
-# 6. CONFUSION MATRIX DETECTION (Strong/Medium/Weak)
-# ---------------------------------------------
+# ============================================================
+# PARTIE C — CONFUSION MATRIX DETECTION + DISTRIBUTION
+# ============================================================
+
 print("\n[5/6] Matrice de confusion detection (Strong/Medium/Weak)...")
 
-DETECT_TEST_IMG = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/images"
-DETECT_TEST_LBL = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/labels"
-
-# Matrice 2x4: lignes=GT(Fire/Background), colonnes=Strong/Medium/Weak/NoDetect
 confusion_det = np.zeros((2, 4), dtype=int)
 conf_all      = []
 counts        = defaultdict(int)
@@ -316,7 +271,6 @@ for img_path in img_files:
     )
     has_annotation = os.path.exists(lbl_path) and os.path.getsize(lbl_path) > 0
     gt_row = 0 if has_annotation else 1
-
     result = yolo_det_best(img_path, verbose=False)[0]
 
     if result.boxes is None or len(result.boxes) == 0:
@@ -332,49 +286,33 @@ for img_path in img_files:
 
 total_boxes = sum(counts.values())
 print(f"Total bounding boxes : {total_boxes}")
-print(f"Images sans detection: {no_detection}")
 print(f"Strong Fire (>70%)   : {counts[0]}")
 print(f"Medium Fire (30-70%) : {counts[1]}")
 print(f"Weak Fire   (<30%)   : {counts[2]}")
 
-# --- Figure A : Confusion Matrix Detection ---
-col_labels = ["Strong Fire\n(conf>70%)", "Medium Fire\n(30-70%)",
-              "Weak Fire\n(conf<30%)", "No\nDetection"]
+# --- Confusion Matrix Detection ---
+col_labels = ["Strong Fire\n(conf>70%)", "Medium Fire\n(30-70%)", "Weak Fire\n(conf<30%)", "No\nDetection"]
 row_labels  = ["Fire\n(annote)", "Background\n(non annote)"]
-
-row_sums = confusion_det.sum(axis=1, keepdims=True).astype(float)
+row_sums    = confusion_det.sum(axis=1, keepdims=True).astype(float)
 row_sums[row_sums == 0] = 1
 confusion_pct = confusion_det / row_sums * 100
-
 annot_det = np.empty_like(confusion_det, dtype=object)
 for i in range(2):
     for j in range(4):
         annot_det[i, j] = f"{confusion_det[i,j]}\n({confusion_pct[i,j]:.1f}%)"
 
 fig_cm2, ax_cm2 = plt.subplots(figsize=(11, 5))
-sns.heatmap(
-    confusion_pct,
-    annot      = annot_det,
-    fmt        = "",
-    cmap       = "YlOrRd",
-    linewidths = 0.8,
-    linecolor  = "white",
-    ax         = ax_cm2,
-    xticklabels= col_labels,
-    yticklabels= row_labels,
-    vmin=0, vmax=100,
-    cbar_kws   = {"label": "% des images", "shrink": 0.8}
-)
-ax_cm2.set_title(
-    "Matrice de Confusion - Detection YOLO par Niveau de Confiance\n"
-    "Approche 2 : YOLOv11s Classify + YOLOv11s Detect",
-    fontsize=13, fontweight="bold", pad=14
-)
+sns.heatmap(confusion_pct, annot=annot_det, fmt="", cmap="YlOrRd",
+            linewidths=0.8, linecolor="white", ax=ax_cm2,
+            xticklabels=col_labels, yticklabels=row_labels,
+            vmin=0, vmax=100, cbar_kws={"label": "% des images", "shrink": 0.8})
+ax_cm2.set_title("Matrice de Confusion - Detection YOLO par Niveau de Confiance\n"
+                 "Approche 2 : YOLOv11s Classify + YOLOv11s Detect",
+                 fontsize=13, fontweight="bold", pad=14)
 ax_cm2.set_xlabel("Niveau de Confiance Predit", fontsize=12, labelpad=10)
 ax_cm2.set_ylabel("Ground Truth", fontsize=12, labelpad=10)
 ax_cm2.tick_params(axis="x", labelsize=10)
 ax_cm2.tick_params(axis="y", labelsize=10, rotation=0)
-
 legend_det = [
     mpatches.Patch(color="#c0392b", label="Strong Fire  - conf > 70%"),
     mpatches.Patch(color="#e67e22", label="Medium Fire - conf 30-70%"),
@@ -383,129 +321,93 @@ legend_det = [
 ]
 ax_cm2.legend(handles=legend_det, loc="upper right",
               bbox_to_anchor=(1.0, -0.22), ncol=2, fontsize=9, frameon=False)
-
 plt.tight_layout()
 path_cm_det = os.path.join(OUTPUT_DIR, "yolo_detection_confusion_matrix.png")
 plt.savefig(path_cm_det, dpi=200, bbox_inches="tight")
 plt.show()
-print(f"Confusion matrix detection sauvegardee: {path_cm_det}")
 
-# --- Figure B : Distribution confidence ---
+# --- Distribution confidence ---
 if conf_all:
     fig_dist, ax_dist = plt.subplots(figsize=(10, 5))
-    n_hist, bins_hist, hist_patches = ax_dist.hist(
-        conf_all, bins=30, edgecolor="white", linewidth=0.5)
+    n_hist, bins_hist, hist_patches = ax_dist.hist(conf_all, bins=30, edgecolor="white", linewidth=0.5)
     for patch, left in zip(hist_patches, bins_hist[:-1]):
         _, _, color = conf_to_intensity(left)
         patch.set_facecolor(color)
-
-    ax_dist.axvline(STRONG_THRESH, color="#7B0000", linestyle="--",
-                    linewidth=1.8, label=f"Seuil Strong = {STRONG_THRESH}")
-    ax_dist.axvline(WEAK_THRESH,   color="#5D3800", linestyle="--",
-                    linewidth=1.8, label=f"Seuil Weak   = {WEAK_THRESH}")
-
+    ax_dist.axvline(STRONG_THRESH, color="#7B0000", linestyle="--", linewidth=1.8, label=f"Seuil Strong = {STRONG_THRESH}")
+    ax_dist.axvline(WEAK_THRESH,   color="#5D3800", linestyle="--", linewidth=1.8, label=f"Seuil Weak   = {WEAK_THRESH}")
     y_max = n_hist.max()
     ax_dist.text(0.15, y_max * 0.85, "Weak Fire",   color="#5D3800", fontsize=11, fontweight="bold")
     ax_dist.text(0.43, y_max * 0.85, "Medium Fire", color="#7A4200", fontsize=11, fontweight="bold")
     ax_dist.text(0.73, y_max * 0.85, "Strong Fire", color="#7B0000", fontsize=11, fontweight="bold")
-
     ax_dist.set_xlabel("Confidence Score", fontsize=12)
     ax_dist.set_ylabel("Nombre de detections", fontsize=12)
-    ax_dist.set_title(
-        "Distribution des Confidence Scores - YOLOv11s Detect\n"
-        "Approche 2 : YOLOv11s Classify + YOLOv11s Detect",
-        fontsize=13, fontweight="bold"
-    )
+    ax_dist.set_title("Distribution des Confidence Scores - YOLOv11s Detect\n"
+                      "Approche 2 : YOLOv11s Classify + YOLOv11s Detect",
+                      fontsize=13, fontweight="bold")
     ax_dist.legend(fontsize=10)
     ax_dist.grid(True, alpha=0.3)
     plt.tight_layout()
     path_dist = os.path.join(OUTPUT_DIR, "yolo_confidence_distribution.png")
     plt.savefig(path_dist, dpi=200, bbox_inches="tight")
     plt.show()
-    print(f"Distribution confidence sauvegardee: {path_dist}")
     avg_conf = np.mean(conf_all) * 100
 else:
     avg_conf = 0.0
 
 
 # ============================================================
-# PARTIE C — PIPELINE COMPLET + VISUALISATION
+# PARTIE D — PIPELINE VISUALISATION
 # ============================================================
 
-# ---------------------------------------------
-# 7. PIPELINE VISUALISATION (Bounding Boxes colores)
-# ---------------------------------------------
 print("\n[6/6] Visualisation pipeline YOLO-Classify -> YOLO-Detect...")
 
-# Recuperer images fire du test set
-fire_class_idx = CLASS_NAMES.index('fire') if 'fire' in CLASS_NAMES else 0
+fire_class_idx    = CLASS_NAMES.index('fire') if 'fire' in CLASS_NAMES else 0
 fire_test_samples = [(p, l) for p, l in all_samples if l == fire_class_idx][:8]
 
 fig_vis, axes_vis = plt.subplots(2, 4, figsize=(18, 9))
-fig_vis.suptitle(
-    "Pipeline YOLO-Classify -> YOLO-Detect : Detection par Niveau d'Intensite (Approche 2)",
-    fontsize=13, fontweight='bold'
-)
+fig_vis.suptitle("Pipeline YOLO-Classify -> YOLO-Detect : Detection par Niveau d'Intensite (Approche 2)",
+                 fontsize=13, fontweight='bold')
 
 for i, (img_path, _) in enumerate(fire_test_samples):
-    ax = axes_vis[i // 4][i % 4]
+    ax      = axes_vis[i // 4][i % 4]
     pil_img = Image.open(img_path).convert("RGB")
-
-    # Etape 1: YOLO Classification
-    t0 = time.time()
-    cls_result = yolo_cls_best(img_path, verbose=False, imgsz=224)[0]
+    cls_result  = yolo_cls_best(img_path, verbose=False, imgsz=224)[0]
     pred_class  = int(cls_result.probs.top1)
     cls_conf    = float(cls_result.probs.top1conf)
-    t_cls = (time.time() - t0) * 1000
-
     ax.imshow(pil_img)
 
     if pred_class == fire_class_idx:
-        # Etape 2: YOLO Detection
-        t1 = time.time()
         det_result = yolo_det_best(img_path, verbose=False)[0]
-        t_det = (time.time() - t1) * 1000
-
         if det_result.boxes is not None and len(det_result.boxes) > 0:
             n_strong, n_medium, n_weak = 0, 0, 0
             for box in det_result.boxes:
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                 conf = float(box.conf[0])
                 _, intensity_label, color = conf_to_intensity(conf)
-
                 if conf >= STRONG_THRESH:   n_strong += 1
                 elif conf >= WEAK_THRESH:   n_medium += 1
                 else:                       n_weak   += 1
-
                 w_scale = pil_img.width  / det_result.orig_shape[1]
                 h_scale = pil_img.height / det_result.orig_shape[0]
-
                 rect = patches.Rectangle(
                     (x1 * w_scale, y1 * h_scale),
                     (x2 - x1) * w_scale, (y2 - y1) * h_scale,
-                    linewidth=2.5, edgecolor=color, facecolor='none'
-                )
+                    linewidth=2.5, edgecolor=color, facecolor='none')
                 ax.add_patch(rect)
                 ax.text(x1 * w_scale, y1 * h_scale - 5,
-                        f"{intensity_label} {conf:.2f}",
-                        color='white', fontsize=7, fontweight='bold',
-                        bbox=dict(boxstyle='round,pad=0.2',
-                                  facecolor=color, alpha=0.85))
-
+                        f"{intensity_label} {conf:.2f}", color='white',
+                        fontsize=7, fontweight='bold',
+                        bbox=dict(boxstyle='round,pad=0.2', facecolor=color, alpha=0.85))
             parts = []
             if n_strong: parts.append(f"S:{n_strong}")
             if n_medium: parts.append(f"M:{n_medium}")
             if n_weak:   parts.append(f"W:{n_weak}")
-            ax.set_title(
-                f"YOLO-Cls:{cls_conf*100:.0f}% | " + " | ".join(parts),
-                fontsize=7, color='darkred', fontweight='bold'
-            )
+            ax.set_title(f"YOLO-Cls:{cls_conf*100:.0f}% | " + " | ".join(parts),
+                         fontsize=7, color='darkred', fontweight='bold')
         else:
-            ax.set_title(f"YOLO-Cls: Fire {cls_conf*100:.0f}%\nYOLO-Det: 0 bbox",
-                         fontsize=8, color='orange')
+            ax.set_title(f"YOLO-Cls: Fire {cls_conf*100:.0f}%\nYOLO-Det: 0 bbox", fontsize=8, color='orange')
     else:
         ax.set_title(f"YOLO-Cls: No Fire\nYOLO-Det ignore", fontsize=8, color='gray')
-
     ax.axis('off')
 
 legend_vis = [
@@ -515,31 +417,25 @@ legend_vis = [
 ]
 fig_vis.legend(handles=legend_vis, loc='lower center', ncol=3,
                fontsize=10, bbox_to_anchor=(0.5, -0.02), frameon=False)
-
 plt.tight_layout()
 path_vis = os.path.join(OUTPUT_DIR, "pipeline_yolo_cls_det_visualizations.png")
 plt.savefig(path_vis, dpi=200, bbox_inches='tight')
 plt.show()
-print(f"Visualisations pipeline sauvegardees: {path_vis}")
 
 
-# ---------------------------------------------
-# 8. BENCHMARK TIMING
-# ---------------------------------------------
-print("\nMesure du temps de traitement du pipeline...")
+# ============================================================
+# BENCHMARK TIMING
+# ============================================================
 times_cls, times_det, times_total = [], [], []
-
 for img_path, _ in fire_test_samples[:min(50, len(fire_test_samples))]:
-    t0 = time.time()
+    t0    = time.time()
     cls_r = yolo_cls_best(img_path, verbose=False, imgsz=224)[0]
     pred  = int(cls_r.probs.top1)
     t_cls = time.time() - t0
-
-    t1 = time.time()
+    t1    = time.time()
     if pred == fire_class_idx:
         _ = yolo_det_best(img_path, verbose=False)
     t_det = time.time() - t1
-
     times_cls.append(t_cls * 1000)
     times_det.append(t_det * 1000)
     times_total.append((t_cls + t_det) * 1000)
@@ -552,9 +448,9 @@ print(f"Temps moyen YOLO-Det   : {avg_det:.1f} ms")
 print(f"Temps total pipeline   : {avg_total:.1f} ms  ({1000/avg_total:.1f} FPS)")
 
 
-# ---------------------------------------------
-# 9. RÉSUMÉ FINAL JSON
-# ---------------------------------------------
+# ============================================================
+# RESUME FINAL JSON
+# ============================================================
 strong_pct = counts[0] / total_boxes * 100 if total_boxes > 0 else 0
 medium_pct = counts[1] / total_boxes * 100 if total_boxes > 0 else 0
 weak_pct   = counts[2] / total_boxes * 100 if total_boxes > 0 else 0
@@ -564,15 +460,15 @@ results_summary = {
     "Classification": {
         "Modele"        : "YOLOv11s-cls",
         "Accuracy"      : round(cls_acc_manual, 2),
-        "Top1_YOLO_val" : round(cls_accuracy, 2),
+        "Top1_YOLO_val" : round(cls_accuracy,   2),
     },
     "Detection": {
         "Modele"        : "YOLOv11s",
-        "mAP_50"        : round(det_map50, 2),
-        "mAP_50_95"     : round(det_map5095, 2),
-        "Precision"     : round(det_precision, 2),
-        "Recall"        : round(det_recall, 2),
-        "Avg_Confidence": round(avg_conf, 2),
+        "mAP_50"        : round(det_map50,      2),
+        "mAP_50_95"     : round(det_map5095,    2),
+        "Precision"     : round(det_precision,  2),
+        "Recall"        : round(det_recall,     2),
+        "Avg_Confidence": round(avg_conf,        2),
     },
     "Fire_Intensity": {
         "Strong_Fire_pct": round(strong_pct, 1),
@@ -598,10 +494,3 @@ print("  APPROCHE 2 TERMINEE - RESULTATS FINAUX")
 print("=" * 60)
 print(json.dumps(results_summary, indent=2, ensure_ascii=False))
 print(f"\nTous les fichiers sauvegardes dans: {OUTPUT_DIR}")
-print("\nFichiers generes:")
-print("  yolo_cls_confusion_matrix.png          -> (Classification)")
-print("  yolo_cls_learning_curves.png           -> (Classification)")
-print("  yolo_detection_confusion_matrix.png    -> (Detection)")
-print("  yolo_confidence_distribution.png       -> (Detection)")
-print("  pipeline_yolo_cls_det_visualizations.png -> (Implementation)")
-print("  approche2_results.json                 -> Comparaison avec Approche 1")
