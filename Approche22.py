@@ -2,7 +2,7 @@
 #  APPROCHE 2 : YOLOv11s (Classification) -> YOLOv11s (Detection)
 #  Classification : fine-tune sur Shamta & Demir 2024
 #  Detection      : fine-tune fire_detector.pt sur Shamta & Demir
-#  Split          : 70% Train / 15% Val / 15% Test
+#  Split          : train/ valid/ test/ (dataset original)
 #  Epochs         : 20
 # ============================================================
 
@@ -37,10 +37,10 @@ BASE_DET = find_real_path("MEMOIRE/ForesFireDataset(ObjectDetection)")
 BASE_OUT = find_real_path("MEMOIRE/Approche22_Results2")
 
 # ---------------------------------------------
-# PATHS
+# PATHS — utilise valid/ au lieu de val/
 # ---------------------------------------------
 CLASS_TRAIN     = f"{BASE_CLS}/train"
-CLASS_VAL       = f"{BASE_CLS}/val"
+CLASS_VAL       = f"{BASE_CLS}/valid"   # ✅ valid pas val
 CLASS_TEST      = f"{BASE_CLS}/test"
 CLASS_YAML      = f"{BASE_CLS}/data.yaml"
 DETECT_YAML     = f"{BASE_DET}/data.yaml"
@@ -59,11 +59,13 @@ print("=" * 60)
 print("  APPROCHE 2 : YOLOv11s Classify -> YOLOv11s Detect")
 print("  Classification : fine-tune 20 epochs")
 print("  Detection      : fine-tune fire_detector.pt 20 epochs")
-print("  Split          : 70% Train / 15% Val / 15% Test")
+print("  Split          : train/ valid/ test/ (original)")
 print("=" * 60)
 print(f"Device              : {'GPU' if torch.cuda.is_available() else 'CPU'}")
 print(f"fire_detector.pt    : {os.path.exists(PRETRAINED_DET)}")
 print(f"CLASS_TRAIN         : {CLASS_TRAIN}")
+print(f"CLASS_VAL           : {CLASS_VAL}")
+print(f"CLASS_TEST          : {CLASS_TEST}")
 print(f"DETECT_YAML         : {DETECT_YAML}")
 print(f"OUTPUT_DIR          : {OUTPUT_DIR}")
 
@@ -80,8 +82,8 @@ def conf_to_intensity(conf):
 
 has_val_folder  = os.path.exists(CLASS_VAL)
 has_test_folder = os.path.exists(CLASS_TEST)
-print(f"Dossier val/  : {has_val_folder}")
-print(f"Dossier test/ : {has_test_folder}")
+print(f"Dossier valid/ : {has_val_folder}")
+print(f"Dossier test/  : {has_test_folder}")
 
 
 # ============================================================
@@ -91,7 +93,7 @@ print(f"Dossier test/ : {has_test_folder}")
 print("\n[1/6] Fine-tuning YOLO-Classify (20 epochs)...")
 yolo_cls = YOLO("yolo11s-cls.pt")
 yolo_cls.train(
-    data          = CLASS_TRAIN,
+    data          = CLASS_YAML,   # ✅ data.yaml au lieu de CLASS_TRAIN
     epochs        = 20,
     imgsz         = 224,
     batch         = 32,
@@ -114,13 +116,19 @@ if not cls_best_list:
 cls_best_path = cls_best_list[0]
 yolo_cls_best = YOLO(cls_best_path)
 
-cls_metrics  = yolo_cls_best.val(data=CLASS_TRAIN, split="test", imgsz=224, batch=32, device=DEVICE)
+cls_metrics  = yolo_cls_best.val(
+    data   = CLASS_YAML,   # ✅ data.yaml
+    split  = "test",
+    imgsz  = 224,
+    batch  = 32,
+    device = DEVICE,
+)
 cls_accuracy = float(cls_metrics.top1) * 100
 cls_top5     = float(cls_metrics.top5) * 100
 print(f"Top-1 Accuracy : {cls_accuracy:.2f}%")
 print(f"Top-5 Accuracy : {cls_top5:.2f}%")
 
-# Split 70/15/15
+# Test set pour Precision/Recall/F1
 random.seed(42)
 all_samples = []
 class_dirs  = sorted([d for d in os.listdir(CLASS_TRAIN)
@@ -167,7 +175,7 @@ print(f"Accuracy manuelle: {cls_acc_manual:.2f}%")
 
 with open(os.path.join(OUTPUT_DIR, "yolo_cls_classification_report.txt"), "w") as f:
     f.write("RAPPORT YOLO-Classify - Approche 2\n" + "="*50 + "\n")
-    f.write(f"Split: 70% Train / 15% Val / 15% Test\n\n")
+    f.write(f"Split: train/ valid/ test/ (dataset original)\n\n")
     f.write(report_cls)
     f.write(f"\nAccuracy: {cls_acc_manual:.2f}%\n")
 
@@ -176,7 +184,7 @@ cm_cls = confusion_matrix(labels_cls, preds_cls)
 plt.figure(figsize=(7, 6))
 sns.heatmap(cm_cls, annot=True, fmt='d', cmap='Oranges',
             xticklabels=CLASS_NAMES, yticklabels=CLASS_NAMES, annot_kws={"size": 14})
-plt.title("YOLO-Classify - Matrice de Confusion (Approche 2)\nSplit 70/15/15",
+plt.title("YOLO-Classify - Matrice de Confusion (Approche 2)",
           fontsize=14, fontweight='bold')
 plt.xlabel("Prediction", fontsize=12)
 plt.ylabel("Realite", fontsize=12)
@@ -221,8 +229,6 @@ if results_csv_list:
 # ============================================================
 
 print("\n[3/6] Fine-tuning fire_detector.pt sur dataset Shamta & Demir...")
-print("      Modele de depart : fire_detector.pt (pre-entraine feu)")
-
 yolo_det = YOLO(PRETRAINED_DET)
 yolo_det.train(
     data          = DETECT_YAML,
@@ -462,7 +468,7 @@ weak_pct   = counts[2] / total_boxes * 100 if total_boxes > 0 else 0
 
 results_summary = {
     "Approche" : "Approche 2 - YOLOv11s Classify + YOLOv11s Detect",
-    "Split"    : "70% Train / 15% Val / 15% Test",
+    "Split"    : "train/ valid/ test/ (dataset original Shamta & Demir)",
     "Epochs"   : 20,
     "Classification": {
         "Modele"        : "YOLOv11s-cls (fine-tune Shamta & Demir 2024)",
