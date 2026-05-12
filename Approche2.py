@@ -79,7 +79,7 @@ yolo_cls = YOLO(CLS_BASE_MODEL)
 yolo_cls.train(
     task     = "classify",
     data     = CLASS_TRAIN,
-    epochs   = 20,
+    epochs   = 50,
     imgsz    = 224,
     batch    = 32,
     lr0      = 0.001,
@@ -204,7 +204,7 @@ yolo_det = YOLO(DET_PRETRAINED)   # modèle pré-entraîné feu/fumée
 yolo_det.train(
     task     = "detect",
     data     = DETECT_YAML,
-    epochs   = 20,
+    epochs   = 50,
     imgsz    = 640,
     batch    = 16,
     lr0      = 0.001,
