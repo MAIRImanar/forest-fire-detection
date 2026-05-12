@@ -1,4 +1,4 @@
-import os, glob, torch, time, json
+import os, glob, torch, time, json, shutil
 from ultralytics import YOLO
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
@@ -7,8 +7,6 @@ import seaborn as sns
 import numpy as np
 from tqdm import tqdm
 from PIL import Image
-import urllib.request
-import shutil
 
 
 # ─────────────────────────────────────────────
@@ -32,47 +30,34 @@ print(f"Device                 : {'CUDA' if torch.cuda.is_available() else 'CPU'
 
 
 # ─────────────────────────────────────────────
-# 2. DOWNLOAD PRETRAINED MODEL FROM GITHUB
-#    sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11
+# 2. CHARGEMENT DU MODÈLE PRÉ-ENTRAÎNÉ
+#    best_nano_111.pt — sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11
 # ─────────────────────────────────────────────
 
-print("\n[1/6] Téléchargement du modèle pré-entraîné depuis GitHub...")
+print("\n[1/6] Chargement du modèle pré-entraîné feu/fumée...")
 
-# Available model files in that repo's /models folder:
-#   yolo11n.pt  yolo11s.pt  yolo11m.pt  yolo11l.pt  yolo11x.pt
-# We pick the best (largest / highest accuracy) = yolo11x.pt
-# Change MODEL_VARIANT to "yolo11s.pt" if GPU memory is limited.
+REPO_PATH       = "/content/smoke-fire-yolo"
+MODEL_VARIANT   = "best_nano_111.pt"
+REPO_MODEL      = os.path.join(REPO_PATH, "models", MODEL_VARIANT)
+PRETRAINED_PATH = os.path.join(OUTPUT_DIR, MODEL_VARIANT)
 
-MODEL_VARIANT   = "yolo11x.pt"   # best accuracy; swap to yolo11s.pt for lighter GPU
-GITHUB_RAW_BASE = (
-    "https://github.com/sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11"
-    "/raw/main/models/"
-)
-PRETRAINED_PATH = os.path.join(OUTPUT_DIR, f"pretrained_{MODEL_VARIANT}")
+# Cloner le repo si pas déjà présent
+if not os.path.exists(REPO_PATH):
+    print("  Clonage du repo...")
+    os.system("git clone https://github.com/sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11.git /content/smoke-fire-yolo")
 
+# Copier le modèle vers Drive pour le conserver entre sessions
 if not os.path.exists(PRETRAINED_PATH):
-    url = GITHUB_RAW_BASE + MODEL_VARIANT
-    print(f"  Downloading {MODEL_VARIANT} from:\n  {url}")
-    try:
-        urllib.request.urlretrieve(url, PRETRAINED_PATH)
-        print(f"  Saved to: {PRETRAINED_PATH}")
-    except Exception as e:
-        # Fallback: try with wget inside Colab shell
-        print(f"  urllib failed ({e}), trying wget...")
-        os.system(f'wget -O "{PRETRAINED_PATH}" "{url}"')
+    shutil.copy(REPO_MODEL, PRETRAINED_PATH)
+    print(f"  Modèle copié vers Drive : {PRETRAINED_PATH}")
 else:
-    print(f"  Already exists: {PRETRAINED_PATH}")
+    print(f"  Modèle déjà disponible  : {PRETRAINED_PATH}")
 
-# Verify the file is a valid YOLO checkpoint
 if not os.path.exists(PRETRAINED_PATH) or os.path.getsize(PRETRAINED_PATH) < 1000:
-    raise FileNotFoundError(
-        f"Could not download {MODEL_VARIANT}. "
-        "Please manually download it from:\n"
-        "https://github.com/sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11/tree/main/models\n"
-        f"and place it at: {PRETRAINED_PATH}"
-    )
+    raise FileNotFoundError(f"Modèle introuvable : {PRETRAINED_PATH}")
 
-print(f"  Model size: {os.path.getsize(PRETRAINED_PATH)/1e6:.1f} MB")
+print(f"  Taille : {os.path.getsize(PRETRAINED_PATH)/1e6:.1f} MB")
+print(f"  Source : sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11")
 
 
 # ─────────────────────────────────────────────
@@ -89,7 +74,7 @@ yolo_cls = YOLO(PRETRAINED_PATH)   # load pretrained fire/smoke weights
 yolo_cls.train(
     task       = "classify",
     data       = CLASS_TRAIN,       # folder with class sub-folders
-    epochs     = 1,
+    epochs     = 20,
     imgsz      = 224,
     batch      = 32,
     lr0        = 0.001,
@@ -215,7 +200,7 @@ yolo_det = YOLO(PRETRAINED_PATH)   # reload original pretrained weights
 yolo_det.train(
     task     = "detect",
     data     = DETECT_YAML,
-    epochs   = 1,
+    epochs   = 20,
     imgsz    = 640,
     batch    = 16,
     lr0      = 0.001,
