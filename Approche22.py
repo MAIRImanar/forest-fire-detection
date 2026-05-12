@@ -19,16 +19,34 @@ from collections import defaultdict
 import torch
 
 # ---------------------------------------------
+# FIX GOOGLE DRIVE SHORTCUT PATH
+# ---------------------------------------------
+def find_real_path(relative_path):
+    normal = f"/content/drive/MyDrive/{relative_path}"
+    if os.path.exists(normal):
+        return normal
+    shortcuts = glob.glob("/content/drive/.shortcut-targets-by-id/*/")
+    for shortcut in shortcuts:
+        candidate = os.path.join(shortcut, relative_path)
+        if os.path.exists(candidate):
+            return candidate
+    return normal
+
+BASE_CLS = find_real_path("MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset")
+BASE_DET = find_real_path("MEMOIRE/ForesFireDataset(ObjectDetection)")
+BASE_OUT = find_real_path("MEMOIRE/Approche22_Results2")
+
+# ---------------------------------------------
 # PATHS
 # ---------------------------------------------
-CLASS_TRAIN     = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/train"
-CLASS_VAL       = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/val"
-CLASS_TEST      = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/test"
-CLASS_YAML      = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/data.yaml"
-DETECT_YAML     = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/data.yaml"
-DETECT_TEST_IMG = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/images"
-DETECT_TEST_LBL = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/labels"
-OUTPUT_DIR      = "/content/drive/MyDrive/MEMOIRE/Approche22_Results2"
+CLASS_TRAIN     = f"{BASE_CLS}/train"
+CLASS_VAL       = f"{BASE_CLS}/val"
+CLASS_TEST      = f"{BASE_CLS}/test"
+CLASS_YAML      = f"{BASE_CLS}/data.yaml"
+DETECT_YAML     = f"{BASE_DET}/data.yaml"
+DETECT_TEST_IMG = f"{BASE_DET}/test/images"
+DETECT_TEST_LBL = f"{BASE_DET}/test/labels"
+OUTPUT_DIR      = BASE_OUT
 PRETRAINED_DET  = "/content/fire-detection-using-yolov11/models/fire_detector.pt"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -45,6 +63,9 @@ print("  Split          : 70% Train / 15% Val / 15% Test")
 print("=" * 60)
 print(f"Device              : {'GPU' if torch.cuda.is_available() else 'CPU'}")
 print(f"fire_detector.pt    : {os.path.exists(PRETRAINED_DET)}")
+print(f"CLASS_TRAIN         : {CLASS_TRAIN}")
+print(f"DETECT_YAML         : {DETECT_YAML}")
+print(f"OUTPUT_DIR          : {OUTPUT_DIR}")
 
 # ---------------------------------------------
 # HELPER
@@ -202,7 +223,6 @@ if results_csv_list:
 print("\n[3/6] Fine-tuning fire_detector.pt sur dataset Shamta & Demir...")
 print("      Modele de depart : fire_detector.pt (pre-entraine feu)")
 
-# ✅ On part de fire_detector.pt et on fine-tune sur TON dataset
 yolo_det = YOLO(PRETRAINED_DET)
 yolo_det.train(
     data          = DETECT_YAML,
@@ -215,8 +235,8 @@ yolo_det.train(
     exist_ok      = True,
     device        = DEVICE,
     save          = True,
-    lr0           = 0.001,   # learning rate faible pour fine-tuning
-    freeze        = 10,      # geler les 10 premieres couches
+    lr0           = 0.001,
+    freeze        = 10,
     warmup_epochs = 3,
 )
 print("Fine-tuning Detection termine!")
