@@ -28,7 +28,7 @@ CLASS_YAML      = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classificati
 DETECT_YAML     = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/data.yaml"
 DETECT_TEST_IMG = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/images"
 DETECT_TEST_LBL = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/labels"
-OUTPUT_DIR      = "/content/drive/MyDrive/MEMOIRE/Approche2_Results"
+OUTPUT_DIR      = "/content/drive/MyDrive/MEMOIRE/Approche22_Results2"
 PRETRAINED_DET  = "/content/fire-detection-using-yolov11/models/fire_detector.pt"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
