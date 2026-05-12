@@ -15,7 +15,7 @@ from PIL import Image
 
 CLASS_TRAIN  = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/train"
 DETECT_YAML  = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/data.yaml"
-OUTPUT_DIR   = "/content/drive/MyDrive/MEMOIRE/Approche_YOLO11_Only"
+OUTPUT_DIR   = "/content/drive/MyDrive/MEMOIRE/Approche_YOLO11_OnlyYYYY"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 print("=" * 60)
@@ -30,34 +30,39 @@ print(f"Device                 : {'CUDA' if torch.cuda.is_available() else 'CPU'
 
 
 # ─────────────────────────────────────────────
-# 2. CHARGEMENT DU MODÈLE PRÉ-ENTRAÎNÉ
-#    best_nano_111.pt — sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11
+# 2. CHARGEMENT DES MODÈLES
+#    - Classification : yolo11n-cls.pt  (modèle officiel Ultralytics)
+#    - Détection      : best_nano_111.pt (pré-entraîné feu/fumée)
 # ─────────────────────────────────────────────
 
-print("\n[1/6] Chargement du modèle pré-entraîné feu/fumée...")
+print("\n[1/6] Chargement des modèles...")
 
-REPO_PATH       = "/content/smoke-fire-yolo"
-MODEL_VARIANT   = "best_nano_111.pt"
-REPO_MODEL      = os.path.join(REPO_PATH, "models", MODEL_VARIANT)
-PRETRAINED_PATH = os.path.join(OUTPUT_DIR, MODEL_VARIANT)
+REPO_PATH        = "/content/smoke-fire-yolo"
+DET_MODEL_NAME   = "best_nano_111.pt"
+REPO_MODEL       = os.path.join(REPO_PATH, "models", DET_MODEL_NAME)
+DET_PRETRAINED   = os.path.join(OUTPUT_DIR, DET_MODEL_NAME)
 
 # Cloner le repo si pas déjà présent
 if not os.path.exists(REPO_PATH):
-    print("  Clonage du repo...")
+    print("  Clonage du repo sayedgamal99...")
     os.system("git clone https://github.com/sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11.git /content/smoke-fire-yolo")
 
-# Copier le modèle vers Drive pour le conserver entre sessions
-if not os.path.exists(PRETRAINED_PATH):
-    shutil.copy(REPO_MODEL, PRETRAINED_PATH)
-    print(f"  Modèle copié vers Drive : {PRETRAINED_PATH}")
+# Copier best_nano_111.pt vers Drive
+if not os.path.exists(DET_PRETRAINED):
+    shutil.copy(REPO_MODEL, DET_PRETRAINED)
+    print(f"  Modèle détection copié : {DET_PRETRAINED}")
 else:
-    print(f"  Modèle déjà disponible  : {PRETRAINED_PATH}")
+    print(f"  Modèle détection OK    : {DET_PRETRAINED}")
 
-if not os.path.exists(PRETRAINED_PATH) or os.path.getsize(PRETRAINED_PATH) < 1000:
-    raise FileNotFoundError(f"Modèle introuvable : {PRETRAINED_PATH}")
+if not os.path.exists(DET_PRETRAINED) or os.path.getsize(DET_PRETRAINED) < 1000:
+    raise FileNotFoundError(f"Modèle détection introuvable : {DET_PRETRAINED}")
 
-print(f"  Taille : {os.path.getsize(PRETRAINED_PATH)/1e6:.1f} MB")
-print(f"  Source : sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11")
+# Modèle classification : yolo11n-cls.pt (Ultralytics officiel, téléchargé automatiquement)
+CLS_BASE_MODEL = "yolo11n-cls.pt"
+
+print(f"  Modèle classification  : {CLS_BASE_MODEL} (Ultralytics officiel)")
+print(f"  Modèle détection       : {DET_MODEL_NAME} ({os.path.getsize(DET_PRETRAINED)/1e6:.1f} MB)")
+print(f"  Source détection       : sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11")
 
 
 # ─────────────────────────────────────────────
@@ -67,29 +72,28 @@ print(f"  Source : sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11")
 
 print("\n[2/6] Fine-tuning YOLOv11 Classification...")
 
-# Build a classification variant from the pretrained detection weights.
-# Ultralytics supports `task=classify` with any YOLO backbone.
-yolo_cls = YOLO(PRETRAINED_PATH)   # load pretrained fire/smoke weights
+# yolo11n-cls.pt = modèle officiel Ultralytics pour classification d'images
+# best_nano_111.pt est un modèle de DÉTECTION → utilisé uniquement en section 5
+yolo_cls = YOLO(CLS_BASE_MODEL)
 
 yolo_cls.train(
-    task       = "classify",
-    data       = CLASS_TRAIN,       # folder with class sub-folders
-    epochs     = 20,
-    imgsz      = 224,
-    batch      = 32,
-    lr0        = 0.001,
-    name       = "yolo11_classify",
-    project    = os.path.join(OUTPUT_DIR, "cls_runs"),
-    patience   = 7,
-    exist_ok   = True,
-    device     = DEVICE,
-    save       = True,
-    split      = 0.15,              # 15 % val from train folder
-    augment    = True,
-    degrees    = 15,
-    fliplr     = 0.5,
-    hsv_v      = 0.3,
-    hsv_s      = 0.3,
+    task     = "classify",
+    data     = CLASS_TRAIN,
+    epochs   = 20,
+    imgsz    = 224,
+    batch    = 32,
+    lr0      = 0.001,
+    name     = "yolo11_classify",
+    project  = os.path.join(OUTPUT_DIR, "cls_runs"),
+    patience = 7,
+    exist_ok = True,
+    device   = DEVICE,
+    save     = True,
+    augment  = True,
+    degrees  = 15,
+    fliplr   = 0.5,
+    hsv_v    = 0.3,
+    hsv_s    = 0.3,
 )
 
 # Locate best classification checkpoint
@@ -195,7 +199,7 @@ print("  Confusion matrix sauvegardée")
 
 print("\n[4/6] Fine-tuning YOLOv11 Détection...")
 
-yolo_det = YOLO(PRETRAINED_PATH)   # reload original pretrained weights
+yolo_det = YOLO(DET_PRETRAINED)   # modèle pré-entraîné feu/fumée
 
 yolo_det.train(
     task     = "detect",
@@ -350,16 +354,16 @@ print(f"Temps total pipeline       : {avg_tot:.1f} ms  ({1000/avg_tot:.1f} FPS)"
 
 results_summary = {
     "Approche"         : "YOLO11 Only — Classification + Détection",
-    "Pretrained_model" : MODEL_VARIANT,
+    "Pretrained_model" : DET_MODEL_NAME,
     "Source"           : "https://github.com/sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11",
     "Classification": {
-        "Modele"       : f"YOLOv11 Classify ({MODEL_VARIANT})",
+        "Modele"       : f"YOLOv11n-cls (yolo11n-cls.pt)",
         "Top1_Accuracy": round(cls_top1, 2),
         "Top5_Accuracy": round(cls_top5, 2),
         "Test_Accuracy": round(cls_acc, 2),
     },
     "Detection": {
-        "Modele"       : f"YOLOv11 Detect ({MODEL_VARIANT})",
+        "Modele"       : f"YOLOv11 Detect ({DET_MODEL_NAME})",
         "mAP_50"       : round(yolo_map50, 2),
         "mAP_50_95"    : round(yolo_map5095, 2),
         "Precision"    : round(yolo_prec, 2),
