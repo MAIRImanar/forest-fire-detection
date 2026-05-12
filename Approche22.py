@@ -1,8 +1,9 @@
 # ============================================================
-#  APPROCHE 2 : YOLOv11s (Classification) -> YOLOv11 (Detection)
+#  APPROCHE 2 : YOLOv11s (Classification) -> YOLOv11s (Detection)
 #  Classification : fine-tune sur Shamta & Demir 2024
-#  Detection      : modele YOLOv11 PRE-ENTRAINE feu (mAP=99.3%)
+#  Detection      : fine-tune fire_detector.pt sur Shamta & Demir
 #  Split          : 70% Train / 15% Val / 15% Test
+#  Epochs         : 20
 # ============================================================
 
 import os, glob, time, json, random, csv
@@ -27,7 +28,7 @@ CLASS_YAML      = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classificati
 DETECT_YAML     = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/data.yaml"
 DETECT_TEST_IMG = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/images"
 DETECT_TEST_LBL = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/labels"
-OUTPUT_DIR      = "/content/drive/MyDrive/MEMOIRE/Approche22_Results"
+OUTPUT_DIR      = "/content/drive/MyDrive/MEMOIRE/Approche2_Results"
 PRETRAINED_DET  = "/content/fire-detection-using-yolov11/models/fire_detector.pt"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -37,9 +38,10 @@ WEAK_THRESH   = 0.30
 DEVICE = 0 if torch.cuda.is_available() else 'cpu'
 
 print("=" * 60)
-print("  APPROCHE 2 : YOLOv11s Classify -> YOLOv11 Detect")
-print("  Split : 70% Train / 15% Val / 15% Test")
-print("  Detection : modele pre-entraine (mAP@0.5 = 99.3%)")
+print("  APPROCHE 2 : YOLOv11s Classify -> YOLOv11s Detect")
+print("  Classification : fine-tune 20 epochs")
+print("  Detection      : fine-tune fire_detector.pt 20 epochs")
+print("  Split          : 70% Train / 15% Val / 15% Test")
 print("=" * 60)
 print(f"Device              : {'GPU' if torch.cuda.is_available() else 'CPU'}")
 print(f"fire_detector.pt    : {os.path.exists(PRETRAINED_DET)}")
@@ -65,7 +67,7 @@ print(f"Dossier test/ : {has_test_folder}")
 # PARTIE A — CLASSIFICATION
 # ============================================================
 
-print("\n[1/6] Fine-tuning YOLO-Classify (70/15/15)...")
+print("\n[1/6] Fine-tuning YOLO-Classify (20 epochs)...")
 yolo_cls = YOLO("yolo11s-cls.pt")
 yolo_cls.train(
     data          = CLASS_TRAIN,
@@ -83,7 +85,7 @@ yolo_cls.train(
 )
 print("Fine-tuning Classification termine!")
 
-# Evaluation
+# Evaluation Classification
 print("\n[2/6] Evaluation YOLO-Classify...")
 cls_best_list = glob.glob(os.path.join(OUTPUT_DIR, "cls_runs/**/best.pt"), recursive=True)
 if not cls_best_list:
@@ -148,7 +150,7 @@ with open(os.path.join(OUTPUT_DIR, "yolo_cls_classification_report.txt"), "w") a
     f.write(report_cls)
     f.write(f"\nAccuracy: {cls_acc_manual:.2f}%\n")
 
-# Confusion Matrix
+# Confusion Matrix Classification
 cm_cls = confusion_matrix(labels_cls, preds_cls)
 plt.figure(figsize=(7, 6))
 sns.heatmap(cm_cls, annot=True, fmt='d', cmap='Oranges',
@@ -194,14 +196,39 @@ if results_csv_list:
 
 
 # ============================================================
-# PARTIE B — DETECTION (modele PRE-ENTRAINE)
+# PARTIE B — DETECTION (fine-tune fire_detector.pt)
 # ============================================================
 
-print("\n[3/6] Chargement modele detection PRE-ENTRAINE...")
-yolo_det_best = YOLO(PRETRAINED_DET)
-print("Modele detection charge!")
+print("\n[3/6] Fine-tuning fire_detector.pt sur dataset Shamta & Demir...")
+print("      Modele de depart : fire_detector.pt (pre-entraine feu)")
 
+# ✅ On part de fire_detector.pt et on fine-tune sur TON dataset
+yolo_det = YOLO(PRETRAINED_DET)
+yolo_det.train(
+    data          = DETECT_YAML,
+    epochs        = 20,
+    imgsz         = 640,
+    batch         = 16,
+    name          = "approche2_detect",
+    project       = os.path.join(OUTPUT_DIR, "det_runs"),
+    patience      = 10,
+    exist_ok      = True,
+    device        = DEVICE,
+    save          = True,
+    lr0           = 0.001,   # learning rate faible pour fine-tuning
+    freeze        = 10,      # geler les 10 premieres couches
+    warmup_epochs = 3,
+)
+print("Fine-tuning Detection termine!")
+
+# Evaluation Detection
 print("\n[4/6] Evaluation YOLO-Detect...")
+det_best_list = glob.glob(os.path.join(OUTPUT_DIR, "det_runs/**/best.pt"), recursive=True)
+if not det_best_list:
+    raise FileNotFoundError("best.pt detect introuvable!")
+det_best_path = det_best_list[0]
+yolo_det_best = YOLO(det_best_path)
+
 det_metrics   = yolo_det_best.val(data=DETECT_YAML, split="test")
 det_map50     = float(det_metrics.box.map50) * 100
 det_map5095   = float(det_metrics.box.map)   * 100
@@ -215,6 +242,7 @@ print(f"Recall       : {det_recall:.2f}%")
 
 with open(os.path.join(OUTPUT_DIR, "yolo_det_report.txt"), "w") as f:
     f.write("RAPPORT YOLO-Detect - Approche 2\n" + "="*50 + "\n")
+    f.write(f"fine-tune depuis : fire_detector.pt\n")
     f.write(f"mAP@0.5      : {det_map50:.2f}%\n")
     f.write(f"mAP@0.5:0.95 : {det_map5095:.2f}%\n")
     f.write(f"Precision    : {det_precision:.2f}%\n")
@@ -276,7 +304,8 @@ sns.heatmap(confusion_pct, annot=annot_det, fmt="", cmap="YlOrRd",
             linewidths=0.8, linecolor="white", ax=ax_cm2,
             xticklabels=col_labels, yticklabels=row_labels,
             vmin=0, vmax=100, cbar_kws={"label": "% des images", "shrink": 0.8})
-ax_cm2.set_title("Matrice de Confusion - Detection YOLO\nApproche 2 : YOLOv11s Classify + YOLOv11 Detect",
+ax_cm2.set_title("Matrice de Confusion - Detection YOLO\n"
+                 "Approche 2 : YOLOv11s Classify + YOLOv11s Detect (fine-tune fire_detector.pt)",
                  fontsize=13, fontweight="bold", pad=14)
 ax_cm2.set_xlabel("Niveau de Confiance Predit", fontsize=12, labelpad=10)
 ax_cm2.set_ylabel("Ground Truth", fontsize=12, labelpad=10)
@@ -329,7 +358,7 @@ fire_class_idx    = CLASS_NAMES.index('fire') if 'fire' in CLASS_NAMES else 0
 fire_test_samples = [(p, l) for p, l in all_samples if l == fire_class_idx][:8]
 
 fig_vis, axes_vis = plt.subplots(2, 4, figsize=(18, 9))
-fig_vis.suptitle("Pipeline YOLO-Classify -> YOLO-Detect Pre-entraine (Approche 2)",
+fig_vis.suptitle("Pipeline YOLO-Classify -> YOLO-Detect (fine-tune fire_detector.pt) - Approche 2",
                  fontsize=13, fontweight='bold')
 
 for i, (img_path, _) in enumerate(fire_test_samples):
@@ -412,15 +441,16 @@ medium_pct = counts[1] / total_boxes * 100 if total_boxes > 0 else 0
 weak_pct   = counts[2] / total_boxes * 100 if total_boxes > 0 else 0
 
 results_summary = {
-    "Approche" : "Approche 2 - YOLOv11s Classify + YOLOv11 Detect (Pre-entraine)",
+    "Approche" : "Approche 2 - YOLOv11s Classify + YOLOv11s Detect",
     "Split"    : "70% Train / 15% Val / 15% Test",
+    "Epochs"   : 20,
     "Classification": {
         "Modele"        : "YOLOv11s-cls (fine-tune Shamta & Demir 2024)",
         "Accuracy"      : round(cls_acc_manual, 2),
         "Top1_YOLO_val" : round(cls_accuracy,   2),
     },
     "Detection": {
-        "Modele"        : "YOLOv11n pre-entraine (bhaskrr/fire-detection-using-yolov11)",
+        "Modele"        : "fire_detector.pt (fine-tune Shamta & Demir 2024)",
         "mAP_50"        : round(det_map50,      2),
         "mAP_50_95"     : round(det_map5095,    2),
         "Precision"     : round(det_precision,  2),
