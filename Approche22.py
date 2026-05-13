@@ -3,7 +3,7 @@
 #  Classification : fine-tune sur Shamta & Demir 2024
 #  Detection      : fine-tune fire_detector.pt sur Shamta & Demir
 #  Split          : 70% Train / 15% Val / 15% Test (créé automatiquement)
-#  Epochs         : 100
+#  Epochs         : 50
 # ============================================================
 
 import os, glob, time, json, random, csv, shutil
