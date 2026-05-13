@@ -32,15 +32,58 @@ def find_real_path(relative_path):
 
 BASE_CLS = find_real_path("MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset")
 BASE_DET = find_real_path("MEMOIRE/ForesFireDataset(ObjectDetection)")
-BASE_OUT = find_real_path("MEMOIRE/Approche_YOLO11_Only")
+BASE_OUT = find_real_path("MEMOIRE/Approche_YOLO11_Only_v2")
+
+# ─────────────────────────────────────────────
+# CRÉER SPLIT 70/15/15 + data.yaml AUTOMATIQUEMENT
+# ─────────────────────────────────────────────
+SPLIT_DIR = f"{BASE_CLS}/split_final"
+TRAIN_SRC = f"{BASE_CLS}/train"
+CLASSES   = sorted([d for d in os.listdir(TRAIN_SRC)
+                    if os.path.isdir(os.path.join(TRAIN_SRC, d))])
+
+if not os.path.exists(f"{SPLIT_DIR}/data.yaml"):
+    print("Création du split 70/15/15...")
+    random.seed(42)
+    for split in ["train", "valid", "test"]:
+        for cls in CLASSES:
+            os.makedirs(os.path.join(SPLIT_DIR, split, cls), exist_ok=True)
+
+    for cls in CLASSES:
+        cls_dir = os.path.join(TRAIN_SRC, cls)
+        imgs    = [f for f in os.listdir(cls_dir)
+                   if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        random.shuffle(imgs)
+        n       = len(imgs)
+        n_train = int(0.70 * n)
+        n_valid = int(0.15 * n)
+        splits  = {
+            "train" : imgs[:n_train],
+            "valid" : imgs[n_train:n_train + n_valid],
+            "test"  : imgs[n_train + n_valid:]
+        }
+        for split_name, files in splits.items():
+            for fname in files:
+                shutil.copy2(
+                    os.path.join(cls_dir, fname),
+                    os.path.join(SPLIT_DIR, split_name, cls, fname)
+                )
+        print(f"  {cls}: train={len(splits['train'])} | valid={len(splits['valid'])} | test={len(splits['test'])}")
+
+    yaml_content = f"path: {SPLIT_DIR}\ntrain: train\nval: valid\ntest: test\n\nnc: {len(CLASSES)}\nnames: {CLASSES}\n"
+    with open(f"{SPLIT_DIR}/data.yaml", "w") as f:
+        f.write(yaml_content)
+    print(f"data.yaml créé!")
+else:
+    print(f"Split déjà existant : {SPLIT_DIR}")
 
 # ─────────────────────────────────────────────
 # 1. PATHS & CONFIG
 # ─────────────────────────────────────────────
-CLASS_TRAIN     = f"{BASE_CLS}/train"
-CLASS_VAL       = f"{BASE_CLS}/valid"
-CLASS_TEST      = f"{BASE_CLS}/test"
-CLASS_YAML      = f"{BASE_CLS}/data.yaml"
+CLASS_TRAIN     = f"{SPLIT_DIR}/train"
+CLASS_VAL       = f"{SPLIT_DIR}/valid"
+CLASS_TEST      = f"{SPLIT_DIR}/test"
+CLASS_YAML      = f"{SPLIT_DIR}/data.yaml"
 DETECT_YAML     = f"{BASE_DET}/data.yaml"
 DETECT_TEST_IMG = f"{BASE_DET}/test/images"
 DETECT_TEST_LBL = f"{BASE_DET}/test/labels"
@@ -54,7 +97,7 @@ DEVICE = 0 if torch.cuda.is_available() else "cpu"
 print("=" * 60)
 print("  APPROCHE YOLO11 ONLY : Classification + Détection")
 print("=" * 60)
-print(f"CLASS_TRAIN : {CLASS_TRAIN}")
+print(f"CLASS_YAML  : {CLASS_YAML}")
 print(f"DETECT_YAML : {DETECT_YAML}")
 print(f"OUTPUT_DIR  : {OUTPUT_DIR}")
 print(f"Device      : {'GPU' if torch.cuda.is_available() else 'CPU'}")
@@ -106,8 +149,8 @@ print("\n[2/6] Fine-tuning YOLOv11 Classification (50 epochs)...")
 yolo_cls = YOLO(CLS_BASE_MODEL)
 yolo_cls.train(
     task     = "classify",
-    data     = CLASS_YAML,   # ✅ data.yaml avec train/valid/test
-    epochs   = 50,
+    data     = CLASS_YAML,
+    epochs   = 1,
     imgsz    = 224,
     batch    = 32,
     lr0      = 0.001,
@@ -139,8 +182,8 @@ yolo_cls_best = YOLO(best_cls_path)
 
 cls_metrics = yolo_cls_best.val(
     task   = "classify",
-    data   = CLASS_YAML,   # ✅ data.yaml
-    split  = "test",       # ✅ test pas val
+    data   = CLASS_YAML,
+    split  = "test",
     imgsz  = 224,
     device = DEVICE,
 )
@@ -151,34 +194,19 @@ print(f"  Top-5 Accuracy : {cls_top5:.2f}%")
 
 # Test set pour Precision/Recall/F1
 random.seed(42)
-all_samples = []
-class_dirs  = sorted([d for d in os.listdir(CLASS_TRAIN)
-                      if os.path.isdir(os.path.join(CLASS_TRAIN, d))])
+all_samples    = []
+class_dirs     = sorted([d for d in os.listdir(CLASS_TRAIN)
+                         if os.path.isdir(os.path.join(CLASS_TRAIN, d))])
 cls_names_list = class_dirs
 print(f"  Classes : {cls_names_list}")
 
-# Utiliser dossier test/ si existe
-has_test_folder = os.path.exists(CLASS_TEST)
-if has_test_folder:
-    print("  Utilisation du dossier test/ existant")
-    for label_idx, cls_name in enumerate(cls_names_list):
-        test_dir = os.path.join(CLASS_TEST, cls_name)
-        if os.path.exists(test_dir):
-            imgs = [os.path.join(test_dir, f) for f in os.listdir(test_dir)
-                    if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-            for img_path in imgs:
-                all_samples.append((img_path, label_idx))
-else:
-    print("  Split 70/15/15 manuel")
-    for label_idx, cls_name in enumerate(cls_names_list):
-        cls_dir = os.path.join(CLASS_TRAIN, cls_name)
-        imgs = [os.path.join(cls_dir, f) for f in os.listdir(cls_dir)
+print("  Utilisation du dossier test/ existant")
+for label_idx, cls_name in enumerate(cls_names_list):
+    test_dir = os.path.join(CLASS_TEST, cls_name)
+    if os.path.exists(test_dir):
+        imgs = [os.path.join(test_dir, f) for f in os.listdir(test_dir)
                 if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-        random.shuffle(imgs)
-        n       = len(imgs)
-        n_train = int(0.70 * n)
-        n_val   = int(0.15 * n)
-        for img_path in imgs[n_train + n_val:]:
+        for img_path in imgs:
             all_samples.append((img_path, label_idx))
 
 print(f"  Test set : {len(all_samples)} images")
@@ -222,7 +250,6 @@ results_csv_list = glob.glob(os.path.join(OUTPUT_DIR, "cls_runs/**/results.csv")
 if results_csv_list:
     epochs_list, train_loss_list, val_acc_list = [], [], []
     with open(results_csv_list[0], newline='') as f:
-        import csv
         reader = csv.DictReader(f)
         for row in reader:
             row = {k.strip(): v.strip() for k, v in row.items()}
@@ -255,19 +282,19 @@ print("\n[4/6] Fine-tuning YOLOv11 Détection (50 epochs)...")
 
 yolo_det = YOLO(DET_PRETRAINED)
 yolo_det.train(
-    task     = "detect",
-    data     = DETECT_YAML,
-    epochs   = 50,
-    imgsz    = 640,
-    batch    = 16,
-    lr0      = 0.001,
-    freeze   = 10,
-    name     = "yolo11_detect",
-    project  = os.path.join(OUTPUT_DIR, "det_runs"),
-    patience = 10,
-    exist_ok = True,
-    device   = DEVICE,
-    save     = True,
+    task          = "detect",
+    data          = DETECT_YAML,
+    epochs        = 1,
+    imgsz         = 640,
+    batch         = 16,
+    lr0           = 0.001,
+    freeze        = 10,
+    name          = "yolo11_detect",
+    project       = os.path.join(OUTPUT_DIR, "det_runs"),
+    patience      = 10,
+    exist_ok      = True,
+    device        = DEVICE,
+    save          = True,
     warmup_epochs = 3,
 )
 
