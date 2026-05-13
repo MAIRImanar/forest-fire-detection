@@ -1,7 +1,7 @@
 # ============================================================
 #  APPROCHE YOLO11 ONLY : Classification + Détection
 #  Classification : yolo11n-cls.pt fine-tune
-#  Detection      : best_nano_111.pt fine-tune
+#  Detection      : yolo11-d-fire-dataset.pt (D-Fire dataset)
 #  Dataset        : Shamta & Demir 2024
 # ============================================================
 
@@ -90,12 +90,13 @@ DETECT_TEST_LBL = f"{BASE_DET}/test/labels"
 OUTPUT_DIR      = BASE_OUT
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-STRONG_THRESH = 0.70
+STRONG_THRESH = 0.50
 WEAK_THRESH   = 0.30
 DEVICE = 0 if torch.cuda.is_available() else "cpu"
 
 print("=" * 60)
 print("  APPROCHE YOLO11 ONLY : Classification + Détection")
+print("  Modèle détection : yolo11-d-fire-dataset.pt")
 print("=" * 60)
 print(f"CLASS_YAML  : {CLASS_YAML}")
 print(f"DETECT_YAML : {DETECT_YAML}")
@@ -117,28 +118,52 @@ def conf_to_intensity(conf):
 
 # ─────────────────────────────────────────────
 # 2. CHARGEMENT MODELE DETECTION PRE-ENTRAINE
+#    yolo11-d-fire-dataset.pt (D-Fire dataset)
+#    Chemin : models/kaggle developed models/
 # ─────────────────────────────────────────────
 print("\n[1/6] Chargement du modèle détection pré-entraîné...")
 
 REPO_PATH      = "/content/smoke-fire-yolo"
-DET_MODEL_NAME = "best_nano_111.pt"
-REPO_MODEL     = os.path.join(REPO_PATH, "models", DET_MODEL_NAME)
+DET_MODEL_NAME = "yolo11-d-fire-dataset.pt"                                    # ← CHANGÉ
+REPO_MODEL     = os.path.join(REPO_PATH, "models",
+                               "kaggle developed models", DET_MODEL_NAME)       # ← CHANGÉ
 DET_PRETRAINED = os.path.join(OUTPUT_DIR, DET_MODEL_NAME)
 
+# Cloner le repo si absent
 if not os.path.exists(REPO_PATH):
     print("  Clonage du repo sayedgamal99...")
     os.system("git clone https://github.com/sayedgamal99/Real-Time-Smoke-Fire-Detection-YOLO11.git /content/smoke-fire-yolo")
 
+# Vérifier que le fichier existe dans le repo cloné
+if not os.path.exists(REPO_MODEL):
+    print(f"\n  ERREUR : fichier introuvable dans le repo : {REPO_MODEL}")
+    print("  Contenu du dossier 'kaggle developed models' :")
+    kaggle_dir = os.path.join(REPO_PATH, "models", "kaggle developed models")
+    if os.path.exists(kaggle_dir):
+        for f in os.listdir(kaggle_dir):
+            print(f"    - {f}")
+    else:
+        print("    Dossier inexistant. Vérifiez le clone.")
+    raise FileNotFoundError(f"Modèle introuvable : {REPO_MODEL}")
+
+# Copier vers Drive pour conserver entre sessions
 if not os.path.exists(DET_PRETRAINED):
     shutil.copy(REPO_MODEL, DET_PRETRAINED)
-    print(f"  Modèle copié : {DET_PRETRAINED}")
+    print(f"  Modèle copié vers Drive : {DET_PRETRAINED}")
+else:
+    print(f"  Modèle déjà disponible  : {DET_PRETRAINED}")
 
-if not os.path.exists(DET_PRETRAINED) or os.path.getsize(DET_PRETRAINED) < 1000:
-    raise FileNotFoundError(f"Modèle détection introuvable : {DET_PRETRAINED}")
+print(f"  Taille : {os.path.getsize(DET_PRETRAINED)/1e6:.1f} MB")
+
+# Inspecter le modèle : nombre de classes
+_tmp = YOLO(DET_PRETRAINED)
+print(f"  Classes du modèle : {_tmp.names}")
+print(f"  nc = {len(_tmp.names)}")
+del _tmp
 
 CLS_BASE_MODEL = "yolo11n-cls.pt"
 print(f"  Classification : {CLS_BASE_MODEL}")
-print(f"  Détection      : {DET_MODEL_NAME} ({os.path.getsize(DET_PRETRAINED)/1e6:.1f} MB)")
+print(f"  Détection      : {DET_MODEL_NAME}")
 
 
 # ─────────────────────────────────────────────
@@ -150,7 +175,7 @@ yolo_cls = YOLO(CLS_BASE_MODEL)
 yolo_cls.train(
     task     = "classify",
     data     = CLASS_YAML,
-    epochs   = 1,
+    epochs   = 2,
     imgsz    = 224,
     batch    = 32,
     lr0      = 0.001,
@@ -277,6 +302,7 @@ if results_csv_list:
 
 # ─────────────────────────────────────────────
 # 5. DETECTION FINE-TUNING
+#    yolo11-d-fire-dataset.pt comme point de départ
 # ─────────────────────────────────────────────
 print("\n[4/6] Fine-tuning YOLOv11 Détection (50 epochs)...")
 
@@ -284,18 +310,27 @@ yolo_det = YOLO(DET_PRETRAINED)
 yolo_det.train(
     task          = "detect",
     data          = DETECT_YAML,
-    epochs        = 1,
+    epochs        = 2,
     imgsz         = 640,
     batch         = 16,
-    lr0           = 0.001,
+    lr0           = 0.0005,       # ← lr faible : poids déjà bons sur feux
+    lrf           = 0.01,
     freeze        = 10,
     name          = "yolo11_detect",
     project       = os.path.join(OUTPUT_DIR, "det_runs"),
-    patience      = 10,
+    patience      = 15,
     exist_ok      = True,
     device        = DEVICE,
     save          = True,
     warmup_epochs = 3,
+    augment       = True,
+    mosaic        = 1.0,
+    hsv_h         = 0.015,
+    hsv_s         = 0.7,
+    hsv_v         = 0.4,
+    fliplr        = 0.5,
+    translate     = 0.1,
+    scale         = 0.5,
 )
 
 best_det_list = glob.glob(os.path.join(OUTPUT_DIR, "det_runs/**/best.pt"), recursive=True)
@@ -435,7 +470,7 @@ fire_class_idx = cls_names_list.index('fire') if 'fire' in cls_names_list else 0
 fire_samples   = [(p, l) for p, l in all_samples if l == fire_class_idx][:8]
 
 fig, axes = plt.subplots(2, 4, figsize=(18, 9))
-fig.suptitle("Pipeline YOLOv11 : Classification → Détection (YOLO11 Only)",
+fig.suptitle("Pipeline YOLOv11 : Classification → Détection (YOLO11 Only — D-Fire Model)",
              fontsize=14, fontweight='bold')
 
 for i, (img_path, _) in enumerate(fire_samples):
@@ -569,4 +604,4 @@ print("\n" + "=" * 60)
 print("  APPROCHE YOLO11 ONLY TERMINÉE")
 print("=" * 60)
 print(json.dumps(results_summary, indent=2, ensure_ascii=False))
-print(f"\nRésultats : {OUTPUT_DIR}")
+print(f"\nResultats : {OUTPUT_DIR}")
