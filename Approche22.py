@@ -1,5 +1,5 @@
 # ============================================================
-#  APPROCHE 2 : YOLOv11s (Classification) -> YOLOv11s (Detection)
+#  APPROCHE 22 : YOLOv11s (Classification) -> YOLOv11s (Detection)
 #  Classification : fine-tune sur Shamta & Demir 2024
 #  Detection      : fine-tune fire_detector.pt sur Shamta & Demir
 #  Split          : 70% Train / 15% Val / 15% Test (créé automatiquement)
@@ -34,17 +34,17 @@ def find_real_path(relative_path):
 
 BASE_CLS = find_real_path("MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset")
 BASE_DET = find_real_path("MEMOIRE/ForesFireDataset(ObjectDetection)")
-BASE_OUT = find_real_path("MEMOIRE/Approche22_Results2_epoch1_v2")
+BASE_OUT = find_real_path("MEMOIRE/Approche22_Results2_v2")
 
 # ---------------------------------------------
-# CRÉER SPLIT 70/15/15 + data.yaml AUTOMATIQUEMENT
+# CRÉER SPLIT 70/15/15 AUTOMATIQUEMENT
 # ---------------------------------------------
 SPLIT_DIR  = f"{BASE_CLS}/split_final"
 TRAIN_SRC  = f"{BASE_CLS}/train"
 CLASSES    = sorted([d for d in os.listdir(TRAIN_SRC)
                      if os.path.isdir(os.path.join(TRAIN_SRC, d))])
 
-if not os.path.exists(f"{SPLIT_DIR}/data.yaml"):
+if not os.path.exists(os.path.join(SPLIT_DIR, "train")):
     print("Création du split 70/15/15...")
     random.seed(42)
     for split in ["train", "valid", "test"]:
@@ -71,11 +71,7 @@ if not os.path.exists(f"{SPLIT_DIR}/data.yaml"):
                     os.path.join(SPLIT_DIR, split_name, cls, fname)
                 )
         print(f"  {cls}: train={len(splits['train'])} | valid={len(splits['valid'])} | test={len(splits['test'])}")
-
-    yaml_content = f"path: {SPLIT_DIR}\ntrain: train\nval: valid\ntest: test\n\nnc: {len(CLASSES)}\nnames: {CLASSES}\n"
-    with open(f"{SPLIT_DIR}/data.yaml", "w") as f:
-        f.write(yaml_content)
-    print(f"data.yaml créé !")
+    print("Split créé!")
 else:
     print(f"Split déjà existant : {SPLIT_DIR}")
 
@@ -85,7 +81,6 @@ else:
 CLASS_TRAIN     = f"{SPLIT_DIR}/train"
 CLASS_VAL       = f"{SPLIT_DIR}/valid"
 CLASS_TEST      = f"{SPLIT_DIR}/test"
-CLASS_YAML      = f"{SPLIT_DIR}/data.yaml"
 DETECT_YAML     = f"{BASE_DET}/data.yaml"
 DETECT_TEST_IMG = f"{BASE_DET}/test/images"
 DETECT_TEST_LBL = f"{BASE_DET}/test/labels"
@@ -107,7 +102,6 @@ print("=" * 60)
 print(f"Device              : {'GPU' if torch.cuda.is_available() else 'CPU'}")
 print(f"fire_detector.pt    : {os.path.exists(PRETRAINED_DET)}")
 print(f"CLASS_TRAIN         : {CLASS_TRAIN}")
-print(f"CLASS_YAML          : {CLASS_YAML}")
 print(f"DETECT_YAML         : {DETECT_YAML}")
 print(f"OUTPUT_DIR          : {OUTPUT_DIR}")
 print(f"Dossier valid/ : {os.path.exists(CLASS_VAL)}")
@@ -124,9 +118,6 @@ def conf_to_intensity(conf):
     else:
         return 2, "Weak Fire",   "#f1c40f"
 
-has_val_folder  = os.path.exists(CLASS_VAL)
-has_test_folder = os.path.exists(CLASS_TEST)
-
 
 # ============================================================
 # PARTIE A — CLASSIFICATION
@@ -135,7 +126,7 @@ has_test_folder = os.path.exists(CLASS_TEST)
 print("\n[1/6] Fine-tuning YOLO-Classify (20 epochs)...")
 yolo_cls = YOLO("yolo11s-cls.pt")
 yolo_cls.train(
-    data          = CLASS_YAML,
+    data          = SPLIT_DIR,    # ✅ dossier pas yaml
     epochs        = 1,
     imgsz         = 224,
     batch         = 32,
@@ -159,7 +150,7 @@ cls_best_path = cls_best_list[0]
 yolo_cls_best = YOLO(cls_best_path)
 
 cls_metrics  = yolo_cls_best.val(
-    data   = CLASS_YAML,
+    data   = SPLIT_DIR,    # ✅ dossier pas yaml
     split  = "test",
     imgsz  = 224,
     batch  = 32,
@@ -259,7 +250,7 @@ if results_csv_list:
 print("\n[3/6] Fine-tuning fire_detector.pt sur dataset Shamta & Demir...")
 yolo_det = YOLO(PRETRAINED_DET)
 yolo_det.train(
-    data          = DETECT_YAML,
+    data          = DETECT_YAML,   # ✅ yaml pour detection
     epochs        = 1,
     imgsz         = 640,
     batch         = 16,
@@ -497,7 +488,7 @@ weak_pct   = counts[2] / total_boxes * 100 if total_boxes > 0 else 0
 results_summary = {
     "Approche" : "Approche 2 - YOLOv11s Classify + YOLOv11s Detect",
     "Split"    : "70% Train / 15% Val / 15% Test",
-    "Epochs"   : 20,
+    "Epochs"   : 1,
     "Classification": {
         "Modele"        : "YOLOv11s-cls (fine-tune Shamta & Demir 2024)",
         "Accuracy"      : round(cls_acc_manual, 2),
