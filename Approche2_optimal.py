@@ -33,7 +33,7 @@ def find_real_path(relative_path):
 
 BASE_CLS = find_real_path("MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset")
 BASE_DET = find_real_path("MEMOIRE/ForesFireDataset(ObjectDetection)")
-BASE_OUT = find_real_path("MEMOIRE/Approche_YOLO11_Optimal")
+BASE_OUT = find_real_path("MEMOIRE/Approche_YOLO11_Optimal_v2_50epochs")
 
 # ─────────────────────────────────────────────
 # CRÉER SPLIT 70/15/15 AUTOMATIQUEMENT
@@ -163,7 +163,7 @@ yolo_cls = YOLO(CLS_BASE_MODEL)
 yolo_cls.train(
     task     = "classify",
     data     = SPLIT_DIR,        # dossier 70/15/15
-    epochs   = 1,
+    epochs   = 50,
     imgsz    = 224,
     batch    = 32,
     lr0      = 0.001,
@@ -295,7 +295,7 @@ yolo_det = YOLO(DET_PRETRAINED)
 yolo_det.train(
     task          = "detect",
     data          = DETECT_YAML,
-    epochs        = 1,
+    epochs        = 50,
     imgsz         = 640,
     batch         = 16,
     lr0           = 0.001,
