@@ -34,7 +34,7 @@ def find_real_path(relative_path):
 
 BASE_CLS = find_real_path("MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset")
 BASE_DET = find_real_path("MEMOIRE/ForesFireDataset(ObjectDetection)")
-BASE_OUT = find_real_path("MEMOIRE/Approche22_Results2_v2")
+BASE_OUT = find_real_path("MEMOIRE/Approche22_Results2_v2_epochs100")
 
 # ---------------------------------------------
 # CRÉER SPLIT 70/15/15 AUTOMATIQUEMENT
