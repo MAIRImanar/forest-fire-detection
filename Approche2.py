@@ -174,8 +174,8 @@ print("\n[2/6] Fine-tuning YOLOv11 Classification (50 epochs)...")
 yolo_cls = YOLO(CLS_BASE_MODEL)
 yolo_cls.train(
     task     = "classify",
-    data     = CLASS_YAML,
-    epochs   = 2,
+    data     = SPLIT_DIR,   # dossier, pas yaml
+    epochs   = 1,
     imgsz    = 224,
     batch    = 32,
     lr0      = 0.001,
@@ -207,7 +207,7 @@ yolo_cls_best = YOLO(best_cls_path)
 
 cls_metrics = yolo_cls_best.val(
     task   = "classify",
-    data   = CLASS_YAML,
+    data   = SPLIT_DIR,   # dossier, pas yaml
     split  = "test",
     imgsz  = 224,
     device = DEVICE,
@@ -310,7 +310,7 @@ yolo_det = YOLO(DET_PRETRAINED)
 yolo_det.train(
     task          = "detect",
     data          = DETECT_YAML,
-    epochs        = 2,
+    epochs        = 1,
     imgsz         = 640,
     batch         = 16,
     lr0           = 0.0005,       # ← lr faible : poids déjà bons sur feux
