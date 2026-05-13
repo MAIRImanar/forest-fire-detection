@@ -127,7 +127,7 @@ print("\n[1/6] Fine-tuning YOLO-Classify (20 epochs)...")
 yolo_cls = YOLO("yolo11s-cls.pt")
 yolo_cls.train(
     data          = SPLIT_DIR,    # ✅ dossier pas yaml
-    epochs        = 1,
+    epochs        = 100,
     imgsz         = 224,
     batch         = 32,
     name          = "approche2_classify",
@@ -251,7 +251,7 @@ print("\n[3/6] Fine-tuning fire_detector.pt sur dataset Shamta & Demir...")
 yolo_det = YOLO(PRETRAINED_DET)
 yolo_det.train(
     data          = DETECT_YAML,   # ✅ yaml pour detection
-    epochs        = 1,
+    epochs        = 100,
     imgsz         = 640,
     batch         = 16,
     name          = "approche2_detect",
@@ -488,7 +488,7 @@ weak_pct   = counts[2] / total_boxes * 100 if total_boxes > 0 else 0
 results_summary = {
     "Approche" : "Approche 2 - YOLOv11s Classify + YOLOv11s Detect",
     "Split"    : "70% Train / 15% Val / 15% Test",
-    "Epochs"   : 1,
+    "Epochs"   : 100,
     "Classification": {
         "Modele"        : "YOLOv11s-cls (fine-tune Shamta & Demir 2024)",
         "Accuracy"      : round(cls_acc_manual, 2),
