@@ -27,7 +27,7 @@ CLASS_YAML      = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classificati
 DETECT_YAML     = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/data.yaml"
 DETECT_TEST_IMG = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/images"
 DETECT_TEST_LBL = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/labels"
-OUTPUT_DIR      = "/content/drive/MyDrive/MEMOIRE/Approche2_Results"
+OUTPUT_DIR      = "/content/drive/MyDrive/MEMOIRE/Approche2_Results_yolo22_epochs1"
 PRETRAINED_DET  = "/content/fire-detection-using-yolov11/models/fire_detector.pt"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -69,7 +69,7 @@ print("\n[1/6] Fine-tuning YOLO-Classify (70/15/15)...")
 yolo_cls = YOLO("yolo11s-cls.pt")
 yolo_cls.train(
     data          = CLASS_TRAIN,
-    epochs        = 50,
+    epochs        = 1,
     imgsz         = 224,
     batch         = 32,
     name          = "approche2_classify",
