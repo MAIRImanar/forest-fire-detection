@@ -1,6 +1,6 @@
 # ============================================================
 #  APPROCHE 2 : YOLOv11s (Classification) -> YOLOv11 (Detection)
-#  Classification : fine-tune 20 epochs sur Shamta & Demir 2024
+#  Classification : fine-tune 100 epochs sur Shamta & Demir 2024
 #  Detection      : fire_detector.pt PRE-ENTRAINE (sans re-entrainement)
 #  Split          : 70% Train / 15% Val / 15% Test
 # ============================================================
@@ -33,7 +33,7 @@ def find_real_path(relative_path):
 
 BASE_CLS = find_real_path("MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset")
 BASE_DET = find_real_path("MEMOIRE/ForesFireDataset(ObjectDetection)")
-BASE_OUT = find_real_path("MEMOIRE/YOLO2_Results_final_epochs1")
+BASE_OUT = find_real_path("MEMOIRE/YOLO2_Results_final_epochs100")
 
 # ---------------------------------------------
 # CRÉER SPLIT 70/15/15 AUTOMATIQUEMENT
@@ -125,7 +125,7 @@ print("\n[1/6] Fine-tuning YOLO-Classify (20 epochs)...")
 yolo_cls = YOLO("yolo11s-cls.pt")
 yolo_cls.train(
     data          = SPLIT_DIR,   # ✅ dossier
-    epochs        = 1,          # ✅ 20 epochs
+    epochs        = 100,          # ✅ 100 epochs
     imgsz         = 224,
     batch         = 32,
     name          = "approche2_classify",
@@ -463,7 +463,7 @@ weak_pct   = counts[2] / total_boxes * 100 if total_boxes > 0 else 0
 results_summary = {
     "Approche" : "Approche 2 - YOLOv11s Classify + YOLOv11 Detect (Pre-entraine)",
     "Split"    : "70% Train / 15% Val / 15% Test",
-    "Epochs_classification" : 20,
+    "Epochs_classification" : 100,
     "Classification": {
         "Modele"        : "YOLOv11s-cls (fine-tune Shamta & Demir 2024)",
         "Accuracy"      : round(cls_acc_manual, 2),
