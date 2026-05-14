@@ -1,11 +1,11 @@
 # ============================================================
 #  APPROCHE 2 : YOLOv11s (Classification) -> YOLOv11 (Detection)
-#  Classification : fine-tune sur Shamta & Demir 2024
-#  Detection      : modele YOLOv11 PRE-ENTRAINE feu (mAP=99.3%)
+#  Classification : fine-tune 20 epochs sur Shamta & Demir 2024
+#  Detection      : fire_detector.pt PRE-ENTRAINE (sans re-entrainement)
 #  Split          : 70% Train / 15% Val / 15% Test
 # ============================================================
 
-import os, glob, time, json, random, csv
+import os, glob, time, json, random, csv, shutil
 from ultralytics import YOLO
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
@@ -18,31 +18,92 @@ from collections import defaultdict
 import torch
 
 # ---------------------------------------------
+# FIX GOOGLE DRIVE SHORTCUT PATH
+# ---------------------------------------------
+def find_real_path(relative_path):
+    normal = f"/content/drive/MyDrive/{relative_path}"
+    if os.path.exists(normal):
+        return normal
+    shortcuts = glob.glob("/content/drive/.shortcut-targets-by-id/*/")
+    for shortcut in shortcuts:
+        candidate = os.path.join(shortcut, relative_path)
+        if os.path.exists(candidate):
+            return candidate
+    return normal
+
+BASE_CLS = find_real_path("MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset")
+BASE_DET = find_real_path("MEMOIRE/ForesFireDataset(ObjectDetection)")
+BASE_OUT = find_real_path("MEMOIRE/YOLO2_Results_final_epochs1")
+
+# ---------------------------------------------
+# CRÉER SPLIT 70/15/15 AUTOMATIQUEMENT
+# ---------------------------------------------
+SPLIT_DIR  = f"{BASE_CLS}/split_final"
+TRAIN_SRC  = f"{BASE_CLS}/train"
+CLASSES    = sorted([d for d in os.listdir(TRAIN_SRC)
+                     if os.path.isdir(os.path.join(TRAIN_SRC, d))])
+
+if not os.path.exists(os.path.join(SPLIT_DIR, "train")):
+    print("Création du split 70/15/15...")
+    random.seed(42)
+    for split in ["train", "valid", "test"]:
+        for cls in CLASSES:
+            os.makedirs(os.path.join(SPLIT_DIR, split, cls), exist_ok=True)
+    for cls in CLASSES:
+        cls_dir = os.path.join(TRAIN_SRC, cls)
+        imgs    = [f for f in os.listdir(cls_dir)
+                   if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        random.shuffle(imgs)
+        n       = len(imgs)
+        n_train = int(0.70 * n)
+        n_valid = int(0.15 * n)
+        splits  = {
+            "train" : imgs[:n_train],
+            "valid" : imgs[n_train:n_train + n_valid],
+            "test"  : imgs[n_train + n_valid:]
+        }
+        for split_name, files in splits.items():
+            for fname in files:
+                shutil.copy2(
+                    os.path.join(cls_dir, fname),
+                    os.path.join(SPLIT_DIR, split_name, cls, fname)
+                )
+        print(f"  {cls}: train={len(splits['train'])} | valid={len(splits['valid'])} | test={len(splits['test'])}")
+    print("Split créé!")
+else:
+    print(f"Split déjà existant : {SPLIT_DIR}")
+
+# ---------------------------------------------
 # PATHS
 # ---------------------------------------------
-CLASS_TRAIN     = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/train"
-CLASS_VAL       = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/val"
-CLASS_TEST      = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/test"
-CLASS_YAML      = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/data.yaml"
-DETECT_YAML     = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/data.yaml"
-DETECT_TEST_IMG = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/images"
-DETECT_TEST_LBL = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/test/labels"
-OUTPUT_DIR      = "/content/drive/MyDrive/MEMOIRE/Approche2_Results_yolo22_epochs1"
+CLASS_TRAIN     = f"{SPLIT_DIR}/train"
+CLASS_VAL       = f"{SPLIT_DIR}/valid"
+CLASS_TEST      = f"{SPLIT_DIR}/test"
+DETECT_YAML     = f"{BASE_DET}/data.yaml"
+DETECT_TEST_IMG = f"{BASE_DET}/test/images"
+DETECT_TEST_LBL = f"{BASE_DET}/test/labels"
+OUTPUT_DIR      = BASE_OUT
 PRETRAINED_DET  = "/content/fire-detection-using-yolov11/models/fire_detector.pt"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-STRONG_THRESH = 0.70
+STRONG_THRESH = 0.50
 WEAK_THRESH   = 0.30
 DEVICE = 0 if torch.cuda.is_available() else 'cpu'
 
 print("=" * 60)
 print("  APPROCHE 2 : YOLOv11s Classify -> YOLOv11 Detect")
-print("  Split : 70% Train / 15% Val / 15% Test")
-print("  Detection : modele pre-entraine (mAP@0.5 = 99.3%)")
+print("  Classification : fine-tune 20 epochs")
+print("  Detection      : fire_detector.pt pre-entraine")
+print("  Split          : 70% Train / 15% Val / 15% Test")
 print("=" * 60)
-print(f"Device              : {'GPU' if torch.cuda.is_available() else 'CPU'}")
-print(f"fire_detector.pt    : {os.path.exists(PRETRAINED_DET)}")
+print(f"Device           : {'GPU' if torch.cuda.is_available() else 'CPU'}")
+print(f"fire_detector.pt : {os.path.exists(PRETRAINED_DET)}")
+print(f"CLASS_TRAIN      : {CLASS_TRAIN}")
+print(f"DETECT_YAML      : {DETECT_YAML}")
+print(f"OUTPUT_DIR       : {OUTPUT_DIR}")
+print(f"valid/ : {os.path.exists(CLASS_VAL)}")
+print(f"test/  : {os.path.exists(CLASS_TEST)}")
 
 # ---------------------------------------------
 # HELPER
@@ -55,21 +116,16 @@ def conf_to_intensity(conf):
     else:
         return 2, "Weak Fire",   "#f1c40f"
 
-has_val_folder  = os.path.exists(CLASS_VAL)
-has_test_folder = os.path.exists(CLASS_TEST)
-print(f"Dossier val/  : {has_val_folder}")
-print(f"Dossier test/ : {has_test_folder}")
-
 
 # ============================================================
 # PARTIE A — CLASSIFICATION
 # ============================================================
 
-print("\n[1/6] Fine-tuning YOLO-Classify (70/15/15)...")
+print("\n[1/6] Fine-tuning YOLO-Classify (20 epochs)...")
 yolo_cls = YOLO("yolo11s-cls.pt")
 yolo_cls.train(
-    data          = CLASS_TRAIN,
-    epochs        = 1,
+    data          = SPLIT_DIR,   # ✅ dossier
+    epochs        = 1,          # ✅ 20 epochs
     imgsz         = 224,
     batch         = 32,
     name          = "approche2_classify",
@@ -91,13 +147,19 @@ if not cls_best_list:
 cls_best_path = cls_best_list[0]
 yolo_cls_best = YOLO(cls_best_path)
 
-cls_metrics  = yolo_cls_best.val(data=CLASS_TRAIN, split="test", imgsz=224, batch=32, device=DEVICE)
+cls_metrics  = yolo_cls_best.val(
+    data   = SPLIT_DIR,   # ✅ dossier
+    split  = "test",
+    imgsz  = 224,
+    batch  = 32,
+    device = DEVICE,
+)
 cls_accuracy = float(cls_metrics.top1) * 100
 cls_top5     = float(cls_metrics.top5) * 100
 print(f"Top-1 Accuracy : {cls_accuracy:.2f}%")
 print(f"Top-5 Accuracy : {cls_top5:.2f}%")
 
-# Split 70/15/15
+# Test set pour Precision/Recall/F1
 random.seed(42)
 all_samples = []
 class_dirs  = sorted([d for d in os.listdir(CLASS_TRAIN)
@@ -105,27 +167,13 @@ class_dirs  = sorted([d for d in os.listdir(CLASS_TRAIN)
 CLASS_NAMES = class_dirs
 print(f"Classes: {CLASS_NAMES}")
 
-if has_test_folder:
-    print("Utilisation du dossier test/ existant")
-    for label_idx, cls_name in enumerate(CLASS_NAMES):
-        test_dir = os.path.join(CLASS_TEST, cls_name)
-        if os.path.exists(test_dir):
-            imgs = [os.path.join(test_dir, f) for f in os.listdir(test_dir)
-                    if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-            for img_path in imgs:
-                all_samples.append((img_path, label_idx))
-else:
-    print("Split 70/15/15 manuel")
-    for label_idx, cls_name in enumerate(CLASS_NAMES):
-        cls_dir = os.path.join(CLASS_TRAIN, cls_name)
-        imgs = [os.path.join(cls_dir, f) for f in os.listdir(cls_dir)
+print("Utilisation du dossier test/ existant")
+for label_idx, cls_name in enumerate(CLASS_NAMES):
+    test_dir = os.path.join(CLASS_TEST, cls_name)
+    if os.path.exists(test_dir):
+        imgs = [os.path.join(test_dir, f) for f in os.listdir(test_dir)
                 if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-        random.shuffle(imgs)
-        n_total   = len(imgs)
-        n_train   = int(0.70 * n_total)
-        n_valid   = int(0.15 * n_total)
-        test_imgs = imgs[n_train + n_valid:]
-        for img_path in test_imgs:
+        for img_path in imgs:
             all_samples.append((img_path, label_idx))
 
 print(f"Test set: {len(all_samples)} images")
@@ -194,14 +242,14 @@ if results_csv_list:
 
 
 # ============================================================
-# PARTIE B — DETECTION (modele PRE-ENTRAINE)
+# PARTIE B — DETECTION (fire_detector.pt SANS re-entrainement)
 # ============================================================
 
 print("\n[3/6] Chargement modele detection PRE-ENTRAINE...")
-yolo_det_best = YOLO(PRETRAINED_DET)
+yolo_det_best = YOLO(PRETRAINED_DET)   # ✅ chargement direct sans train
 print("Modele detection charge!")
 
-print("\n[4/6] Evaluation YOLO-Detect...")
+print("\n[4/6] Evaluation YOLO-Detect sur dataset Shamta & Demir...")
 det_metrics   = yolo_det_best.val(data=DETECT_YAML, split="test")
 det_map50     = float(det_metrics.box.map50) * 100
 det_map5095   = float(det_metrics.box.map)   * 100
@@ -215,6 +263,7 @@ print(f"Recall       : {det_recall:.2f}%")
 
 with open(os.path.join(OUTPUT_DIR, "yolo_det_report.txt"), "w") as f:
     f.write("RAPPORT YOLO-Detect - Approche 2\n" + "="*50 + "\n")
+    f.write(f"Modele : fire_detector.pt (pre-entraine, sans re-entrainement)\n")
     f.write(f"mAP@0.5      : {det_map50:.2f}%\n")
     f.write(f"mAP@0.5:0.95 : {det_map5095:.2f}%\n")
     f.write(f"Precision    : {det_precision:.2f}%\n")
@@ -414,13 +463,14 @@ weak_pct   = counts[2] / total_boxes * 100 if total_boxes > 0 else 0
 results_summary = {
     "Approche" : "Approche 2 - YOLOv11s Classify + YOLOv11 Detect (Pre-entraine)",
     "Split"    : "70% Train / 15% Val / 15% Test",
+    "Epochs_classification" : 20,
     "Classification": {
         "Modele"        : "YOLOv11s-cls (fine-tune Shamta & Demir 2024)",
         "Accuracy"      : round(cls_acc_manual, 2),
         "Top1_YOLO_val" : round(cls_accuracy,   2),
     },
     "Detection": {
-        "Modele"        : "YOLOv11n pre-entraine (bhaskrr/fire-detection-using-yolov11)",
+        "Modele"        : "fire_detector.pt (pre-entraine, sans re-entrainement)",
         "mAP_50"        : round(det_map50,      2),
         "mAP_50_95"     : round(det_map5095,    2),
         "Precision"     : round(det_precision,  2),
