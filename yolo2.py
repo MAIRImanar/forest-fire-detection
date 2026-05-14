@@ -84,7 +84,7 @@ DETECT_TEST_LBL = f"{BASE_DET}/test/labels"
 OUTPUT_DIR      = BASE_OUT
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-STRONG_THRESH = 0.70
+STRONG_THRESH = 0.50
 WEAK_THRESH   = 0.30
 DEVICE = 0 if torch.cuda.is_available() else "cpu"
 
