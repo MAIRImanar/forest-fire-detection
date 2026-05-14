@@ -15,7 +15,7 @@ from PIL import Image
 
 CLASS_TRAIN  = "/content/drive/MyDrive/MEMOIRE/ForestFireDataset(Classifications)/ForestFireDataset/train"
 DETECT_YAML  = "/content/drive/MyDrive/MEMOIRE/ForesFireDataset(ObjectDetection)/data.yaml"
-OUTPUT_DIR   = "/content/drive/MyDrive/MEMOIRE/Approche_YOLO11_OnlyYYYY"
+OUTPUT_DIR   = "/content/drive/MyDrive/MEMOIRE/Approche_YOLO11_OnlyYYYY_yolo2.100"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 print("=" * 60)
