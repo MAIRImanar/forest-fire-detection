@@ -3,6 +3,8 @@
 #  Dataset UNIQUE : sayedgamal99 Fire-Smoke-Detection-YOLO11
 #  Modèle         : best_nano_111.pt (depuis Drive)
 #  Pipeline       : Image → Classify → If fire → Detect
+#  fire   : images sayedgamal (toutes annotées)
+#  nofire : dossier nofire/ dans le dataset
 # ============================================================
 
 import os, glob, torch, time, json, shutil, random, csv
@@ -30,15 +32,14 @@ def find_real_path(relative_path):
             return candidate
     return normal
 
-# ✅ Chemins exacts depuis ton Google Drive
 BASE_DET      = find_real_path("Fire-Smoke-Detection-Yolov11.v1-smoke-fire-detection.yolov11")
 PRETRAINED_PT = find_real_path("models/best_nano_111.pt")
-BASE_OUT      = find_real_path("MEMOIRE/YOLO11_SayedGamal_Unified")
+BASE_OUT      = find_real_path("resultats/YOLO11_SayedGamal_Unified")
 
 # ---------------------------------------------
-# CRÉER DATASET CLASSIFICATION DEPUIS DÉTECTION
-# images avec labels non vides → fire
-# images sans labels ou labels vides → nofire
+# CRÉER DATASET CLASSIFICATION
+# fire   → toutes les images de train/valid/test sayedgamal
+# nofire → dossier nofire/ à la racine du dataset
 # ---------------------------------------------
 CLS_SPLIT_DIR = f"{BASE_DET}/cls_split"
 
@@ -47,39 +48,60 @@ def build_cls_split(det_base, cls_out):
         print(f"Dataset classification déjà existant : {cls_out}")
         return
 
-    print("Création du dataset classification depuis détection...")
+    print("Création du dataset classification...")
+    random.seed(42)
 
+    # ── FIRE : toutes les images de train/valid/test ──
+    all_fire = []
     for split in ["train", "valid", "test"]:
         img_dir = os.path.join(det_base, split, "images")
-        lbl_dir = os.path.join(det_base, split, "labels")
-        if not os.path.exists(img_dir):
-            print(f"  ⚠️ {split}/images/ introuvable, skip")
-            continue
+        if os.path.exists(img_dir):
+            imgs = [os.path.join(img_dir, f) for f in os.listdir(img_dir)
+                    if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+            all_fire.extend(imgs)
 
-        imgs = [f for f in os.listdir(img_dir)
-                if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    random.shuffle(all_fire)
+    n        = len(all_fire)
+    n_train  = int(0.70 * n)
+    n_valid  = int(0.15 * n)
+    fire_splits = {
+        "train" : all_fire[:n_train],
+        "valid" : all_fire[n_train:n_train + n_valid],
+        "test"  : all_fire[n_train + n_valid:]
+    }
 
-        fire_imgs   = []
-        nofire_imgs = []
+    # ── NOFIRE : depuis le dossier nofire/ ──
+    NOFIRE_DIR = os.path.join(det_base, "nofire")
+    if not os.path.exists(NOFIRE_DIR):
+        raise FileNotFoundError(f"Dossier nofire/ introuvable : {NOFIRE_DIR}")
 
-        for img_name in imgs:
-            lbl_name = os.path.splitext(img_name)[0] + ".txt"
-            lbl_path = os.path.join(lbl_dir, lbl_name)
-            if os.path.exists(lbl_path) and os.path.getsize(lbl_path) > 0:
-                fire_imgs.append(img_name)
-            else:
-                nofire_imgs.append(img_name)
+    all_nofire = [os.path.join(NOFIRE_DIR, f) for f in os.listdir(NOFIRE_DIR)
+                  if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    random.shuffle(all_nofire)
+    n2        = len(all_nofire)
+    n_train2  = int(0.70 * n2)
+    n_valid2  = int(0.15 * n2)
+    nofire_splits = {
+        "train" : all_nofire[:n_train2],
+        "valid" : all_nofire[n_train2:n_train2 + n_valid2],
+        "test"  : all_nofire[n_train2 + n_valid2:]
+    }
 
-        for cls_name, files in [("fire", fire_imgs), ("nofire", nofire_imgs)]:
-            out_dir = os.path.join(cls_out, split, cls_name)
-            os.makedirs(out_dir, exist_ok=True)
-            for fname in files:
-                shutil.copy2(
-                    os.path.join(img_dir, fname),
-                    os.path.join(out_dir, fname)
-                )
-        print(f"  {split}: fire={len(fire_imgs)} | nofire={len(nofire_imgs)}")
+    # ── CRÉER LES DOSSIERS ET COPIER ──
+    for split_name in ["train", "valid", "test"]:
+        for cls_name in ["fire", "nofire"]:
+            os.makedirs(os.path.join(cls_out, split_name, cls_name), exist_ok=True)
 
+    for split_name, files in fire_splits.items():
+        for src in files:
+            shutil.copy2(src, os.path.join(cls_out, split_name, "fire", os.path.basename(src)))
+
+    for split_name, files in nofire_splits.items():
+        for src in files:
+            shutil.copy2(src, os.path.join(cls_out, split_name, "nofire", os.path.basename(src)))
+
+    print(f"  fire  : train={len(fire_splits['train'])} | valid={len(fire_splits['valid'])} | test={len(fire_splits['test'])}")
+    print(f"  nofire: train={len(nofire_splits['train'])} | valid={len(nofire_splits['valid'])} | test={len(nofire_splits['test'])}")
     print("Dataset classification créé!")
 
 build_cls_split(BASE_DET, CLS_SPLIT_DIR)
@@ -100,15 +122,15 @@ CLS_BASE_MODEL  = "yolo11n-cls.pt"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-STRONG_THRESH = 0.70
+STRONG_THRESH = 0.50
 WEAK_THRESH   = 0.30
 DEVICE = 0 if torch.cuda.is_available() else "cpu"
 
 print("=" * 60)
 print("  YOLO11 UNIFIED — Dataset sayedgamal99")
-print("  Classification : fire vs nofire")
-print("  Détection      : fire/smoke bounding boxes")
-print("  Pipeline       : Classify → If fire → Detect")
+print("  fire   : images sayedgamal (train+valid+test)")
+print("  nofire : dossier nofire/ dans dataset")
+print("  Pipeline : Classify → If fire → Detect")
 print("=" * 60)
 print(f"BASE_DET       : {BASE_DET}")
 print(f"DETECT_YAML    : {DETECT_YAML}")
@@ -124,7 +146,7 @@ print(f"best_nano_111  : {os.path.exists(DET_PRETRAINED)}")
 if not os.path.exists(DET_PRETRAINED) or os.path.getsize(DET_PRETRAINED) < 1000:
     raise FileNotFoundError(f"Modèle introuvable : {DET_PRETRAINED}")
 
-print(f"\n  Modèle détection : {DET_MODEL_NAME} ({os.path.getsize(DET_PRETRAINED)/1e6:.1f} MB)")
+print(f"  Modèle : {DET_MODEL_NAME} ({os.path.getsize(DET_PRETRAINED)/1e6:.1f} MB)")
 
 # ---------------------------------------------
 # HELPER
@@ -147,7 +169,7 @@ yolo_cls = YOLO(CLS_BASE_MODEL)
 yolo_cls.train(
     task          = "classify",
     data          = CLS_SPLIT_DIR,
-    epochs        = 1,
+    epochs        = 1,           # ✅ 100 epochs
     imgsz         = 224,
     batch         = 32,
     lr0           = 0.001,
@@ -218,7 +240,8 @@ print(f"Accuracy : {cls_acc:.2f}%")
 
 with open(os.path.join(OUTPUT_DIR, "yolo11_cls_report.txt"), "w") as f:
     f.write("RAPPORT CLASSIFICATION YOLOv11\n" + "="*50 + "\n")
-    f.write(f"Dataset : sayedgamal99 (extrait depuis détection)\n\n")
+    f.write(f"fire  : images sayedgamal\n")
+    f.write(f"nofire: dossier nofire/\n\n")
     f.write(cls_report)
     f.write(f"\nAccuracy: {cls_acc:.2f}%\n")
 
@@ -250,7 +273,7 @@ if results_csv_list:
                 continue
     if epochs_list:
         fig_lc, axes_lc = plt.subplots(1, 2, figsize=(13, 5))
-        fig_lc.suptitle("YOLOv11 Classification — Courbes d'Apprentissage", fontsize=14, fontweight='bold')
+        fig_lc.suptitle("YOLOv11 — Courbes d'Apprentissage Classification", fontsize=14, fontweight='bold')
         axes_lc[0].plot(epochs_list, val_acc_list,    'r-o', markersize=4, label="Val Accuracy")
         axes_lc[0].set_title("Accuracy"); axes_lc[0].set_xlabel("Epoch")
         axes_lc[0].set_ylabel("Accuracy (%)"); axes_lc[0].legend(); axes_lc[0].grid(True, alpha=0.4)
@@ -272,7 +295,7 @@ yolo_det = YOLO(DET_PRETRAINED)
 yolo_det.train(
     task          = "detect",
     data          = DETECT_YAML,
-    epochs        = 1,
+    epochs        = 1,           # ✅ 100 epochs
     imgsz         = 640,
     batch         = 16,
     lr0           = 0.001,
@@ -510,10 +533,11 @@ weak_pct   = counts[2] / total_boxes * 100 if total_boxes > 0 else 0
 results_summary = {
     "Approche"   : "YOLO11 Unified — Dataset sayedgamal99",
     "Dataset"    : "Fire-Smoke-Detection-Yolov11.v1-smoke-fire-detection.yolov11",
+    "Modele"     : DET_MODEL_NAME,
     "Epochs"     : 1,
     "Pipeline"   : "Image → Classify (fire/nofire) → If fire → Detect",
     "Classification": {
-        "Modele"       : "YOLOv11n-cls (yolo11n-cls.pt)",
+        "Modele"       : "YOLOv11n-cls",
         "Top1_Accuracy": round(cls_top1, 2),
         "Top5_Accuracy": round(cls_top5, 2),
         "Test_Accuracy": round(cls_acc,  2),
