@@ -1,10 +1,6 @@
 # ============================================================
 #  YOLO11 UNIFIED : Classification + Détection
-#  Dataset UNIQUE : sayedgamal99 Fire-Smoke-Detection-YOLO11
-#  Modèle         : best_nano_111.pt (depuis Drive)
 #  Pipeline       : Image → Classify → If fire → Detect
-#  fire   : images sayedgamal (toutes annotées)
-#  nofire : dossier nofire/ dans le dataset
 # ============================================================
 
 import os, glob, torch, time, json, shutil, random, csv
@@ -34,12 +30,10 @@ def find_real_path(relative_path):
 
 BASE_DET      = find_real_path("Fire-Smoke-Detection-Yolov11.v1-smoke-fire-detection.yolov11")
 PRETRAINED_PT = find_real_path("models/best_nano_111.pt")
-BASE_OUT      = find_real_path("resultats/YOLO11_SayedGamal_Unified_20EPOCHS")
+BASE_OUT      = find_real_path("Fire-Smoke-Detection-Yolov11.v1-smoke-fire-detection.yolov11/resultats/YOLO11_100EPOCHS")
 
 # ---------------------------------------------
 # CRÉER DATASET CLASSIFICATION
-# fire   → toutes les images de train/valid/test sayedgamal
-# nofire → dossier nofire/ à la racine du dataset
 # ---------------------------------------------
 CLS_SPLIT_DIR = f"{BASE_DET}/cls_split"
 
@@ -169,7 +163,7 @@ yolo_cls = YOLO(CLS_BASE_MODEL)
 yolo_cls.train(
     task          = "classify",
     data          = CLS_SPLIT_DIR,
-    epochs        = 20,           # ✅ 100 epochs
+    epochs        = 100,           # ✅ 100 epochs
     imgsz         = 224,
     batch         = 32,
     lr0           = 0.001,
@@ -295,7 +289,7 @@ yolo_det = YOLO(DET_PRETRAINED)
 yolo_det.train(
     task          = "detect",
     data          = DETECT_YAML,
-    epochs        = 20,           # ✅ 100 epochs
+    epochs        = 100,           # ✅ 100 epochs
     imgsz         = 640,
     batch         = 16,
     lr0           = 0.001,
@@ -532,7 +526,7 @@ weak_pct   = counts[2] / total_boxes * 100 if total_boxes > 0 else 0
 
 results_summary = {
     "Approche"   : "YOLOv11",
-    "Epochs"     : 20,
+    "Epochs"     : 100,
     "Pipeline"   : "Image → Classify (fire/nofire) → If fire → Detect",
     "Classification": {
         "Modele"       : "YOLOv11n-cls",
