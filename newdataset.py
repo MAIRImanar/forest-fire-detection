@@ -121,10 +121,7 @@ WEAK_THRESH   = 0.30
 DEVICE = 0 if torch.cuda.is_available() else "cpu"
 
 print("=" * 60)
-print("  YOLO11 UNIFIED — Dataset sayedgamal99")
-print("  fire   : images sayedgamal (train+valid+test)")
-print("  nofire : dossier nofire/ dans dataset")
-print("  Pipeline : Classify → If fire → Detect")
+print("  YOLOv11")
 print("=" * 60)
 print(f"BASE_DET       : {BASE_DET}")
 print(f"DETECT_YAML    : {DETECT_YAML}")
@@ -135,12 +132,10 @@ print(f"cls train/     : {os.path.exists(CLASS_TRAIN)}")
 print(f"cls valid/     : {os.path.exists(CLASS_VAL)}")
 print(f"cls test/      : {os.path.exists(CLASS_TEST)}")
 print(f"DETECT_YAML    : {os.path.exists(DETECT_YAML)}")
-print(f"best_nano_111  : {os.path.exists(DET_PRETRAINED)}")
 
 if not os.path.exists(DET_PRETRAINED) or os.path.getsize(DET_PRETRAINED) < 1000:
     raise FileNotFoundError(f"Modèle introuvable : {DET_PRETRAINED}")
 
-print(f"  Modèle : {DET_MODEL_NAME} ({os.path.getsize(DET_PRETRAINED)/1e6:.1f} MB)")
 
 # ---------------------------------------------
 # HELPER
@@ -234,8 +229,6 @@ print(f"Accuracy : {cls_acc:.2f}%")
 
 with open(os.path.join(OUTPUT_DIR, "yolo11_cls_report.txt"), "w") as f:
     f.write("RAPPORT CLASSIFICATION YOLOv11\n" + "="*50 + "\n")
-    f.write(f"fire  : images sayedgamal\n")
-    f.write(f"nofire: dossier nofire/\n\n")
     f.write(cls_report)
     f.write(f"\nAccuracy: {cls_acc:.2f}%\n")
 
@@ -243,7 +236,7 @@ cm = confusion_matrix(labels_cls, preds_cls)
 plt.figure(figsize=(7, 6))
 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
             xticklabels=cls_names_list, yticklabels=cls_names_list, annot_kws={"size": 14})
-plt.title("YOLOv11 Classification — Matrice de Confusion\nDataset sayedgamal99",
+plt.title("YOLOv11 Classification — Matrice de Confusion\n",
           fontsize=14, fontweight='bold')
 plt.xlabel("Prédiction", fontsize=12); plt.ylabel("Réalité", fontsize=12)
 plt.tight_layout()
@@ -330,7 +323,6 @@ print(f"Recall       : {yolo_rec:.2f}%")
 
 with open(os.path.join(OUTPUT_DIR, "yolo11_det_report.txt"), "w") as f:
     f.write("RAPPORT DÉTECTION YOLOv11\n" + "="*50 + "\n")
-    f.write(f"Dataset : sayedgamal99\n")
     f.write(f"mAP@0.5      : {yolo_map50:.2f}%\n")
     f.write(f"mAP@0.5:0.95 : {yolo_map5095:.2f}%\n")
     f.write(f"Precision    : {yolo_prec:.2f}%\n")
@@ -386,7 +378,7 @@ sns.heatmap(confusion_pct, annot=annot_det, fmt="", cmap="YlOrRd",
             linewidths=0.8, linecolor="white", ax=ax_cm2,
             xticklabels=col_labels, yticklabels=row_labels,
             vmin=0, vmax=100, cbar_kws={"label": "% des images", "shrink": 0.8})
-ax_cm2.set_title("Matrice de Confusion - Détection\nYOLO11 Unified — Dataset sayedgamal99",
+ax_cm2.set_title("Matrice de Confusion - Détection\nYOLO11",
                  fontsize=13, fontweight="bold", pad=14)
 ax_cm2.set_xlabel("Niveau de Confiance Prédit", fontsize=12, labelpad=10)
 ax_cm2.set_ylabel("Ground Truth", fontsize=12, labelpad=10)
@@ -416,7 +408,7 @@ if conf_all:
     ax_dist.text(0.73, y_max * 0.85, "Strong", color="#7B0000", fontsize=11, fontweight="bold")
     ax_dist.set_xlabel("Confidence Score", fontsize=12)
     ax_dist.set_ylabel("Nombre de détections", fontsize=12)
-    ax_dist.set_title("Distribution des Confidence Scores\nYOLO11 Unified", fontsize=13, fontweight="bold")
+    ax_dist.set_title("Distribution des Confidence Scores\nYOLOv11", fontsize=13, fontweight="bold")
     ax_dist.legend(fontsize=10); ax_dist.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT_DIR, "yolo11_confidence_distribution.png"), dpi=200, bbox_inches="tight")
@@ -435,7 +427,7 @@ fire_class_idx = cls_names_list.index('fire') if 'fire' in cls_names_list else 0
 fire_samples   = [(p, l) for p, l in all_samples if l == fire_class_idx][:8]
 
 fig, axes = plt.subplots(2, 4, figsize=(18, 9))
-fig.suptitle("Pipeline YOLO11 Unified : Classify → Detect\nDataset sayedgamal99",
+fig.suptitle("Pipeline YOLO11 : Classify → Detect\n",
              fontsize=14, fontweight='bold')
 
 for i, (img_path, _) in enumerate(fire_samples):
@@ -535,7 +527,7 @@ results_summary = {
         "Test_Accuracy": round(cls_acc,  2),
     },
     "Detection": {
-        "Modele"        : f"YOLOv11 ({DET_MODEL_NAME} fine-tuned)",
+        "Modele"        : f"YOLOv11n-dtc",
         "mAP_50"        : round(yolo_map50,   2),
         "mAP_50_95"     : round(yolo_map5095, 2),
         "Precision"     : round(yolo_prec,    2),
@@ -557,12 +549,12 @@ results_summary = {
     }
 }
 
-json_path = os.path.join(OUTPUT_DIR, "yolo11_unified_results.json")
+json_path = os.path.join(OUTPUT_DIR, "yolo11_results.json")
 with open(json_path, "w", encoding="utf-8") as f:
     json.dump(results_summary, f, indent=2, ensure_ascii=False)
 
 print("\n" + "=" * 60)
-print("  YOLO11 UNIFIED TERMINÉ")
+print("  YOLO11 TERMINÉ")
 print("=" * 60)
 print(json.dumps(results_summary, indent=2, ensure_ascii=False))
 print(f"\nRésultats : {OUTPUT_DIR}")
