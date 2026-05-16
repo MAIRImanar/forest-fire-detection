@@ -30,7 +30,7 @@ def find_real_path(relative_path):
 
 BASE_DET      = find_real_path("Fire-Smoke-Detection-Yolov11.v1-smoke-fire-detection.yolov11")
 PRETRAINED_PT = find_real_path("models/best_nano_111.pt")
-BASE_OUT      = find_real_path("Fire-Smoke-Detection-Yolov11.v1-smoke-fire-detection.yolov11/resultats/YOLO11_100EPOCHS")
+BASE_OUT      = find_real_path("Fire-Smoke-Detection-Yolov11.v1-smoke-fire-detection.yolov11/resultats/YOLO11_1EPOCHS")
 
 # ---------------------------------------------
 # CRÉER DATASET CLASSIFICATION
@@ -158,7 +158,7 @@ yolo_cls = YOLO(CLS_BASE_MODEL)
 yolo_cls.train(
     task          = "classify",
     data          = CLS_SPLIT_DIR,
-    epochs        = 100,           # ✅ 100 epochs
+    epochs        = 1,           # ✅ 100 epochs
     imgsz         = 224,
     batch         = 32,
     lr0           = 0.001,
@@ -282,7 +282,7 @@ yolo_det = YOLO(DET_PRETRAINED)
 yolo_det.train(
     task          = "detect",
     data          = DETECT_YAML,
-    epochs        = 100,           # ✅ 100 epochs
+    epochs        = 1,           # ✅ 100 epochs
     imgsz         = 640,
     batch         = 16,
     lr0           = 0.001,
@@ -518,7 +518,7 @@ weak_pct   = counts[2] / total_boxes * 100 if total_boxes > 0 else 0
 
 results_summary = {
     "Approche"   : "YOLOv11",
-    "Epochs"     : 100,
+    "Epochs"     : 1,
     "Pipeline"   : "Image → Classify (fire/nofire) → If fire → Detect",
     "Classification": {
         "Modele"       : "YOLOv11n-cls",
